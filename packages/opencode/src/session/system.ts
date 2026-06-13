@@ -3,15 +3,14 @@ import { Context, Effect, Layer } from "effect"
 
 import { InstanceState } from "@/effect/instance-state"
 
-import PROMPT_ANTHROPIC from "./prompt/anthropic.txt"
-import PROMPT_DEFAULT from "./prompt/default.txt"
-import PROMPT_BEAST from "./prompt/beast.txt"
-import PROMPT_GEMINI from "./prompt/gemini.txt"
-import PROMPT_GPT from "./prompt/gpt.txt"
-import PROMPT_KIMI from "./prompt/kimi.txt"
-
-import PROMPT_CODEX from "./prompt/codex.txt"
-import PROMPT_TRINITY from "./prompt/trinity.txt"
+import PROMPT_BASE from "./prompt/base.txt"
+import TUNING_ANTHROPIC from "./prompt/tuning-anthropic.txt"
+import TUNING_BEAST from "./prompt/tuning-beast.txt"
+import TUNING_GEMINI from "./prompt/tuning-gemini.txt"
+import TUNING_GPT from "./prompt/tuning-gpt.txt"
+import TUNING_KIMI from "./prompt/tuning-kimi.txt"
+import TUNING_CODEX from "./prompt/tuning-codex.txt"
+import TUNING_TRINITY from "./prompt/tuning-trinity.txt"
 import type { Provider } from "@/provider/provider"
 import type { Agent } from "@/agent/agent"
 import { Permission } from "@/permission"
@@ -23,19 +22,18 @@ import { PluginBoot } from "@opencode-ai/core/plugin/boot"
 import { Reference } from "@opencode-ai/core/reference"
 
 export function provider(model: Provider.Model) {
-  if (model.api.id.includes("gpt-4") || model.api.id.includes("o1") || model.api.id.includes("o3"))
-    return [PROMPT_BEAST]
-  if (model.api.id.includes("gpt")) {
-    if (model.api.id.includes("codex")) {
-      return [PROMPT_CODEX]
-    }
-    return [PROMPT_GPT]
+  const id = model.api.id.toLowerCase()
+  if (id.includes("gpt-4") || id.includes("o1") || id.includes("o3"))
+    return [PROMPT_BASE, TUNING_BEAST]
+  if (id.includes("gpt")) {
+    if (id.includes("codex")) return [PROMPT_BASE, TUNING_CODEX]
+    return [PROMPT_BASE, TUNING_GPT]
   }
-  if (model.api.id.includes("gemini-")) return [PROMPT_GEMINI]
-  if (model.api.id.includes("claude")) return [PROMPT_ANTHROPIC]
-  if (model.api.id.toLowerCase().includes("trinity")) return [PROMPT_TRINITY]
-  if (model.api.id.toLowerCase().includes("kimi")) return [PROMPT_KIMI]
-  return [PROMPT_DEFAULT]
+  if (id.includes("gemini-")) return [PROMPT_BASE, TUNING_GEMINI]
+  if (id.includes("claude")) return [PROMPT_BASE, TUNING_ANTHROPIC]
+  if (id.includes("trinity")) return [PROMPT_BASE, TUNING_TRINITY]
+  if (id.includes("kimi")) return [PROMPT_BASE, TUNING_KIMI]
+  return [PROMPT_BASE, TUNING_GPT]
 }
 
 export interface Interface {
@@ -60,33 +58,25 @@ export const layer = Layer.effect(
         }).pipe(Effect.provide(locations.get(Location.Ref.make({ directory: AbsolutePath.make(ctx.directory) }))))
         return [
           [
-            `You are powered by the model named ${model.api.id}. The exact model ID is ${model.providerID}/${model.api.id}`,
-            `Here is some useful information about the environment you are running in:`,
-            `<env>`,
-            `  Working directory: ${ctx.directory}`,
-            `  Workspace root folder: ${ctx.worktree}`,
-            `  Is directory a git repo: ${ctx.project.vcs === "git" ? "yes" : "no"}`,
-            `  Platform: ${process.platform}`,
-            `  Today's date: ${new Date().toDateString()}`,
-            `</env>`,
+            `You are powered by model **${model.api.id}** (${model.providerID}/${model.api.id}).`,
+            `Working directory: \`${ctx.directory}\``,
+            `Workspace root: \`${ctx.worktree}\``,
+            `Git repo: ${ctx.project.vcs === "git" ? "yes" : "no"}`,
+            `Platform: ${process.platform}`,
+            `Date: ${new Date().toDateString()}`,
           ].join("\n"),
           references.length === 0
             ? undefined
             : [
-                "Project references provide additional directories that can be accessed when relevant.",
-                "<available_references>",
+                "## Available References",
                 ...references
                   .toSorted((a, b) => a.name.localeCompare(b.name))
                   .flatMap((reference) => [
-                    "  <reference>",
-                    `    <name>${reference.name}</name>`,
-                    `    <path>${reference.path}</path>`,
+                    `- **${reference.name}**: \`${reference.path}\``,
                     ...(reference.description === undefined
                       ? []
-                      : [`    <description>${reference.description}</description>`]),
-                    "  </reference>",
+                      : [`  ${reference.description}`]),
                   ]),
-                "</available_references>",
               ].join("\n"),
         ].filter((part): part is string => part !== undefined)
       }),
