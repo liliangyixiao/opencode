@@ -133,8 +133,8 @@ function getConfig() {
       return {
         ...base,
         appId,
-        productName: "OpenCode",
-        protocols: { name: "OpenCode", schemes: ["opencode"] },
+        productName: "OpenCode-AI",
+        protocols: { name: "OpenCode-AI", schemes: ["opencode"] },
         publish: { provider: "github", owner: "anomalyco", repo: "opencode", channel: "latest" },
         deb: { fpm: [legacyDesktopEntryFpm] },
         rpm: { packageName: "opencode", fpm: [legacyDesktopEntryFpm] },
