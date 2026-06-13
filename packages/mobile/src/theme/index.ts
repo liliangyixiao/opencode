@@ -1,0 +1,46 @@
+export const theme = {
+  colors: {
+    primary: "#3b82f6",
+    primaryDark: "#2563eb",
+    accent: "#60a5fa",
+    background: "#0a0a0a",
+    surface: "#141414",
+    surfaceLight: "#1e1e1e",
+    surfaceHover: "#262626",
+    border: "#2a2a2a",
+    borderLight: "#333333",
+    text: "#f5f5f5",
+    textMuted: "#a3a3a3",
+    textFaint: "#737373",
+    success: "#22c55e",
+    warning: "#eab308",
+    error: "#ef4444",
+    info: "#3b82f6",
+  },
+  spacing: {
+    xs: 4,
+    sm: 8,
+    md: 12,
+    lg: 16,
+    xl: 24,
+    xxl: 32,
+  },
+  radius: {
+    xs: 3,
+    sm: 6,
+    md: 10,
+    lg: 14,
+    xl: 20,
+    full: 9999,
+  },
+  fontSize: {
+    xs: 11,
+    sm: 13,
+    md: 15,
+    lg: 17,
+    xl: 20,
+    xxl: 24,
+  },
+} as const
+
+export type Theme = typeof theme
