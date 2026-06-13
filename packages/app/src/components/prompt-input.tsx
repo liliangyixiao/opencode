@@ -81,6 +81,7 @@ import { useQueryOptions } from "@/context/server-sync"
 import { pathKey } from "@/utils/path-key"
 import { base64Encode } from "@opencode-ai/core/util/encode"
 import { displayName } from "@/pages/layout/helpers"
+import { authTokenFromCredentials } from "@/utils/server"
 
 interface PromptInputProps {
   class?: string
@@ -1155,6 +1156,55 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     onSubmit: props.onSubmit,
   })
 
+  const [enhancing, setEnhancing] = createSignal(false)
+
+  const handleEnhance = async () => {
+    if (enhancing()) return
+    const currentPrompt = prompt.current()
+    const text = currentPrompt.map((part) => ("content" in part ? part.content : "")).join("")
+    if (!text.trim()) return
+
+    const currentModel = local.model.current()
+    const conn = server.current
+    if (!conn) return
+
+    setEnhancing(true)
+    try {
+      const headers: Record<string, string> = { "Content-Type": "application/json" }
+      if (conn.http.password) {
+        headers["Authorization"] = `Basic ${authTokenFromCredentials({ username: conn.http.username, password: conn.http.password })}`
+      }
+      const body: Record<string, string> = { text }
+      if (currentModel) {
+        body.providerID = currentModel.provider.id
+        body.modelID = currentModel.id
+      }
+      const response = await fetch(`${conn.http.url}/experimental/enhance`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+      })
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      const data = (await response.json()) as { text: string }
+      if (data.text && data.text !== text) {
+        const enhancedPrompt: Prompt = [{ type: "text", content: data.text, start: 0, end: data.text.length }]
+        prompt.set(enhancedPrompt, data.text.length)
+        requestAnimationFrame(() => {
+          editorRef?.focus()
+          setCursorPosition(editorRef, data.text.length)
+          queueScroll()
+        })
+      }
+    } catch (err) {
+      showToast({
+        title: language.t("prompt.toast.enhanceFailed.title"),
+        description: err instanceof Error ? err.message : undefined,
+      })
+    } finally {
+      setEnhancing(false)
+    }
+  }
+
   const handleKeyDown = (event: KeyboardEvent) => {
     if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "u") {
       event.preventDefault()
@@ -1634,6 +1684,24 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                     </div>
                   </Show>
                 </div>
+                <Show when={store.mode === "normal" && !blank()}>
+                  <Tooltip placement="top" value={enhancing() ? language.t("prompt.action.enhancing") : language.t("prompt.action.enhance")}>
+                    <IconButton
+                      data-action="prompt-enhance"
+                      type="button"
+                      disabled={enhancing()}
+                      icon="brain"
+                      variant="ghost"
+                      class="size-7 rounded-md p-[6px] mr-2 transition-all duration-200 hover:bg-v2-background-bg-layer-02 active:scale-95 disabled:opacity-50"
+                      classList={{
+                        "text-v2-icon-icon-accent": enhancing(),
+                        "text-v2-icon-icon-muted hover:text-v2-icon-icon-base": !enhancing(),
+                      }}
+                      onClick={(e) => { e.preventDefault(); void handleEnhance() }}
+                      aria-label={language.t("prompt.action.enhance")}
+                    />
+                  </Tooltip>
+                </Show>
                 <Tooltip placement="top" inactive={!working() && blank()} value={tip()}>
                   <IconButton
                     data-action="prompt-submit"
@@ -1701,7 +1769,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
               onMouseDown={(e) => {
                 const target = e.target
                 if (!(target instanceof HTMLElement)) return
-                if (target.closest('[data-action="prompt-attach"], [data-action="prompt-submit"]')) {
+                if (target.closest('[data-action="prompt-attach"], [data-action="prompt-submit"], [data-action="prompt-enhance"]')) {
                   return
                 }
                 editorRef?.focus()
@@ -1777,6 +1845,20 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                 />
 
                 <div class="flex items-center gap-1 pointer-events-auto">
+                  <Show when={store.mode === "normal" && !blank()}>
+                    <Tooltip placement="top" value={enhancing() ? language.t("prompt.action.enhancing") : language.t("prompt.action.enhance")}>
+                      <IconButton
+                        data-action="prompt-enhance"
+                        type="button"
+                        disabled={enhancing()}
+                        icon="brain"
+                        variant="ghost"
+                        class="size-8 text-v2-icon-icon-muted disabled:opacity-50"
+                        onClick={(e) => { e.preventDefault(); void handleEnhance() }}
+                        aria-label={language.t("prompt.action.enhance")}
+                      />
+                    </Tooltip>
+                  </Show>
                   <Tooltip placement="top" inactive={!working() && blank()} value={tip()}>
                     <IconButton
                       data-action="prompt-submit"

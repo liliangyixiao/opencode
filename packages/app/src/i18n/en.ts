@@ -284,6 +284,9 @@ export const dict = {
   "prompt.attachment.remove": "Remove attachment",
   "prompt.action.send": "Send",
   "prompt.action.stop": "Stop",
+  "prompt.action.enhance": "Enhance Input",
+  "prompt.action.enhancing": "Enhancing...",
+  "prompt.toast.enhanceFailed.title": "Failed to enhance input",
 
   "prompt.toast.pasteUnsupported.title": "Unsupported attachment",
   "prompt.toast.pasteUnsupported.description": "Only images, PDFs, or text files can be attached here.",
