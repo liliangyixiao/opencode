@@ -1,0 +1,28 @@
+# frp client (frpc) — runs on the Mac, connects OUT to the public server and
+# exposes the local opencode server through a reverse tunnel.
+#
+# Copy this file to /opt/homebrew/etc/frp/frpc.toml (brew install location) or
+# wherever your frpc reads its config, then fill in SERVER, TOKEN.
+#
+# Data path:
+#   phone --https--> server :443 (nginx) --> server 127.0.0.1:6001 (this proxy)
+#                                      --> tunnel --> Mac 127.0.0.1:5001 (opencode)
+
+serverAddr = "SERVER_PUBLIC_IP"
+serverPort = 7000
+
+# Must match frps.toml auth.token on the server.
+auth.token = "REPLACE_WITH_FRPS_TOKEN"
+
+# Reconnect automatically if the tunnel drops.
+transport.heartbeatInterval = 30
+transport.heartbeatTimeout = 90
+
+[[proxies]]
+name = "opencode"
+type = "tcp"
+# The Mac exposes this on the server; nginx reverse-proxies to it.
+remotePort = 6001
+# The local opencode server. Listens on *:5001; loopback is enough and safer.
+localIP = "127.0.0.1"
+localPort = 5001

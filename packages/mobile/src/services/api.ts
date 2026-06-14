@@ -1,7 +1,8 @@
 import type { ServerConnection, ServerHealth, ProjectInfo, SessionInfo, Message, MessagePart, PromptPayload, SSEEvent } from "../types"
 
 function baseUrl(conn: ServerConnection): string {
-  return `http://${conn.host}:${conn.port}`
+  const scheme = conn.tls ? "https" : "http"
+  return `${scheme}://${conn.host}:${conn.port}`
 }
 
 function base64Encode(str: string): string {

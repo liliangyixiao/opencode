@@ -10,6 +10,7 @@ export function ConnectScreen() {
   const [port, setPort] = useState("5001")
   const [password, setPassword] = useState("")
   const [name, setName] = useState("")
+  const [tls, setTls] = useState(false)
   const [connecting, setConnecting] = useState(false)
 
   const handleConnect = async (conn: ServerConnection) => {
@@ -22,11 +23,12 @@ export function ConnectScreen() {
   const handleAdd = () => {
     if (!host.trim()) return Alert.alert("提示", "请输入服务器地址")
     const conn: ServerConnection = {
-      id: `${host}:${port}`,
+      id: `${tls ? "https" : "http"}://${host.trim()}:${port}`,
       name: name.trim() || host.trim(),
       host: host.trim(),
       port: Number(port) || 3000,
       password: password || undefined,
+      tls,
     }
     addConnection(conn)
     handleConnect(conn)
@@ -34,6 +36,7 @@ export function ConnectScreen() {
     setPort("5001")
     setPassword("")
     setName("")
+    setTls(false)
   }
 
   return (
@@ -50,9 +53,15 @@ export function ConnectScreen() {
 
       <View style={styles.form}>
         <TextInput style={styles.input} placeholder="服务器名称" placeholderTextColor={theme.colors.textFaint} value={name} onChangeText={setName} />
-        <TextInput style={styles.input} placeholder="IP 地址 (如 192.168.1.100)" placeholderTextColor={theme.colors.textFaint} value={host} onChangeText={setHost} keyboardType="decimal-pad" autoCapitalize="none" />
+        <TextInput style={styles.input} placeholder="地址 (如 192.168.1.100 或 opencode.example.com)" placeholderTextColor={theme.colors.textFaint} value={host} onChangeText={setHost} keyboardType="url" autoCapitalize="none" />
         <View style={styles.row}>
           <TextInput style={[styles.input, styles.portInput]} placeholder="端口" placeholderTextColor={theme.colors.textFaint} value={port} onChangeText={setPort} keyboardType="number-pad" />
+          <TouchableOpacity
+            style={[styles.tlsToggle, tls && styles.tlsToggleActive]}
+            onPress={() => setTls((v) => !v)}
+          >
+            <Text style={[styles.tlsToggleText, tls && styles.tlsToggleTextActive]}>HTTPS</Text>
+          </TouchableOpacity>
         </View>
         <TextInput style={styles.input} placeholder="密码 (可选)" placeholderTextColor={theme.colors.textFaint} value={password} onChangeText={setPassword} secureTextEntry />
         <TouchableOpacity style={styles.addButton} onPress={handleAdd}>
@@ -67,7 +76,7 @@ export function ConnectScreen() {
             <View key={conn.id} style={styles.savedItem}>
               <TouchableOpacity style={styles.savedItemInfo} onPress={() => handleConnect(conn)} disabled={connecting}>
                 <Text style={styles.savedItemName}>{conn.name}</Text>
-                <Text style={styles.savedItemHost}>{conn.host}:{conn.port}</Text>
+                <Text style={styles.savedItemHost}>{conn.tls ? "https" : "http"}://{conn.host}:{conn.port}</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.deleteButton} onPress={() => removeConnection(conn.id)}>
                 <Text style={styles.deleteButtonText}>删除</Text>
@@ -98,6 +107,10 @@ const styles = StyleSheet.create({
   input: { backgroundColor: theme.colors.surface, borderRadius: theme.radius.md, padding: theme.spacing.lg, color: theme.colors.text, fontSize: theme.fontSize.md, borderWidth: 1, borderColor: theme.colors.border },
   row: { flexDirection: "row", gap: theme.spacing.md },
   portInput: { flex: 1 },
+  tlsToggle: { justifyContent: "center", alignItems: "center", paddingHorizontal: theme.spacing.lg, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.colors.border, backgroundColor: theme.colors.surface },
+  tlsToggleActive: { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary },
+  tlsToggleText: { color: theme.colors.textMuted, fontSize: theme.fontSize.sm, fontWeight: "600" },
+  tlsToggleTextActive: { color: "#fff" },
   addButton: { backgroundColor: theme.colors.primary, borderRadius: theme.radius.md, padding: theme.spacing.lg, alignItems: "center", marginTop: theme.spacing.sm },
   addButtonText: { color: "#fff", fontSize: theme.fontSize.md, fontWeight: "600" },
   savedSection: { marginTop: theme.spacing.xxl },

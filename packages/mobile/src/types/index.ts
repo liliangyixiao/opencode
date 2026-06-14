@@ -4,6 +4,7 @@ export interface ServerConnection {
   host: string
   port: number
   password?: string
+  tls?: boolean
   lastConnected?: number
 }
 

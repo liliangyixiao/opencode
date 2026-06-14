@@ -1,6 +1,6 @@
-import React, { useState } from "react"
+import React, { useState, useEffect } from "react"
 import { StatusBar } from "expo-status-bar"
-import { StyleSheet, View } from "react-native"
+import { StyleSheet, View, BackHandler } from "react-native"
 import { ConnectionProvider, useConnection } from "./hooks/useConnection"
 import { ConnectScreen } from "./screens/ConnectScreen"
 import { ProjectScreen } from "./screens/ProjectScreen"
@@ -35,6 +35,26 @@ function AppContent() {
   if (status === "disconnected" && screen !== "connect") {
     setScreen("connect")
   }
+
+  // Android hardware back button. We intercept only when there is a meaningful
+  // in-app navigation state to go back to; otherwise let the OS handle it
+  // (e.g. exit the app from the top-level screen). iOS has no hardware back,
+  // so this is a no-op there.
+  useEffect(() => {
+    const onBack = (): boolean => {
+      if (screen === "chat") {
+        setScreen("projects")
+        return true
+      }
+      if (screen === "projects" && selectedDirectory !== null) {
+        setSelectedDirectory(null)
+        return true
+      }
+      return false
+    }
+    const sub = BackHandler.addEventListener("hardwareBackPress", onBack)
+    return () => sub.remove()
+  }, [screen, selectedDirectory])
 
   return (
     <View style={styles.container}>
