@@ -8,14 +8,24 @@ import type { ProjectInfo, SessionInfo } from "../types"
 interface Props {
   onSelectProject: (directory: string, projectName: string) => void
   onSelectSession: (sessionID: string, directory: string) => void
+  selectedDirectory: string | null
 }
 
-export function ProjectScreen({ onSelectProject, onSelectSession }: Props) {
+function projectName(project: ProjectInfo): string {
+  const parts = project.worktree.split("/")
+  return parts[parts.length - 1] || project.id
+}
+
+export function ProjectScreen({ onSelectProject, onSelectSession, selectedDirectory }: Props) {
   const { activeConnection, disconnect } = useConnection()
   const [projects, setProjects] = useState<ProjectInfo[]>([])
   const [sessions, setSessions] = useState<SessionInfo[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+
+  const filteredSessions = selectedDirectory
+    ? sessions.filter((s) => s.directory === selectedDirectory)
+    : sessions
 
   const loadData = useCallback(async () => {
     if (!activeConnection) return
@@ -46,8 +56,8 @@ export function ProjectScreen({ onSelectProject, onSelectSession }: Props) {
   const handleNewChat = async () => {
     if (!activeConnection) return
     try {
-      const session = await api.createSession(activeConnection)
-      onSelectSession(session.id, "")
+      const session = await api.createSession(activeConnection, selectedDirectory || undefined)
+      onSelectSession(session.id, session.directory || selectedDirectory || "")
     } catch (err) {
       console.error("Failed to create session:", err)
     }
@@ -84,13 +94,13 @@ export function ProjectScreen({ onSelectProject, onSelectSession }: Props) {
             data={projects}
             keyExtractor={(item) => item.id}
             renderItem={({ item }) => (
-              <TouchableOpacity style={styles.projectItem} onPress={() => onSelectProject(item.path, item.name)}>
+              <TouchableOpacity style={styles.projectItem} onPress={() => onSelectProject(item.worktree, projectName(item))}>
                 <View style={styles.projectIcon}>
-                  <Text style={styles.projectIconText}>{(item.name || "P")[0].toUpperCase()}</Text>
+                  <Text style={styles.projectIconText}>{projectName(item)[0].toUpperCase()}</Text>
                 </View>
                 <View style={styles.projectInfo}>
-                  <Text style={styles.projectName}>{item.name}</Text>
-                  <Text style={styles.projectPath} numberOfLines={1}>{item.path}</Text>
+                  <Text style={styles.projectName}>{projectName(item)}</Text>
+                  <Text style={styles.projectPath} numberOfLines={1}>{item.worktree}</Text>
                 </View>
               </TouchableOpacity>
             )}
@@ -99,15 +109,15 @@ export function ProjectScreen({ onSelectProject, onSelectSession }: Props) {
       )}
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>最近会话</Text>
+        <Text style={styles.sectionTitle}>{selectedDirectory ? "项目会话" : "最近会话"}</Text>
         <FlatList
-          data={sessions}
+          data={filteredSessions}
           keyExtractor={(item) => item.id}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.primary} />}
           renderItem={({ item }) => (
-            <TouchableOpacity style={styles.sessionItem} onPress={() => onSelectSession(item.id, "")}>
-              <Text style={styles.sessionTitle} numberOfLines={1}>{item.title || "未命名会话"}</Text>
-              <Text style={styles.sessionDate}>{new Date(item.updatedAt).toLocaleDateString()}</Text>
+            <TouchableOpacity style={styles.sessionItem} onPress={() => onSelectSession(item.id, item.directory || "")}>
+              <Text style={styles.sessionTitle} numberOfLines={1}>{item.title || item.slug || "未命名会话"}</Text>
+              <Text style={styles.sessionDate}>{new Date(item.time.updated).toLocaleDateString()}</Text>
             </TouchableOpacity>
           )}
           ListEmptyComponent={<Text style={styles.emptyText}>暂无会话</Text>}

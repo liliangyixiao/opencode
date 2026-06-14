@@ -9,26 +9,34 @@ export interface ServerConnection {
 
 export interface ProjectInfo {
   id: string
-  name: string
-  path: string
-  icon?: string
-  vcs?: "git" | "none"
+  worktree: string
+  vcs?: string
+  time: { created: number; updated: number }
 }
 
 export interface SessionInfo {
   id: string
+  slug?: string
+  projectID?: string
+  directory?: string
   title?: string
-  createdAt: number
-  updatedAt: number
-  metadata?: Record<string, unknown>
+  version?: string
+  time: { created: number; updated: number }
 }
 
-export interface MessagePart {
-  id: string
-  type: string
-  content: string
-  metadata?: Record<string, unknown>
+export type ToolPartStatus = "pending" | "running" | "completed" | "error"
+
+export interface ToolPartState {
+  status: ToolPartStatus
+  title?: string
+  output?: string
+  error?: string
 }
+
+export type MessagePart =
+  | { type: "text"; text: string }
+  | { type: "reasoning"; text: string }
+  | { type: "tool"; tool: string; state: ToolPartState }
 
 export interface Message {
   id: string
