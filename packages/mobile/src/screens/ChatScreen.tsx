@@ -1,9 +1,10 @@
-import React, { useState, useRef, useEffect } from "react"
-import { View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator } from "react-native"
+import React, { useState, useRef, useEffect, useCallback } from "react"
+import { View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet, KeyboardAvoidingView, Platform, ActivityIndicator, ScrollView } from "react-native"
+import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { theme } from "../theme"
 import { useChat } from "../hooks/useChat"
 import { useConnection } from "../hooks/useConnection"
-import type { Message, MessagePart, ToolPartStatus } from "../types"
+import type { Message, MessagePart, ToolPartStatus, PermissionResponse } from "../types"
 
 interface Props {
   sessionID: string
@@ -12,19 +13,44 @@ interface Props {
 }
 
 export function ChatScreen({ sessionID, directory, onBack }: Props) {
-  const { activeConnection } = useConnection()
-  const { messages, sending, sendMessage, abort, loading } = useChat(sessionID, directory || undefined)
+  const insets = useSafeAreaInsets()
+  const { sseHealth } = useConnection()
+  const { messages, sending, sendMessage, abort, loading, pendingPermission, replyPermission } = useChat(sessionID, directory || undefined)
   const [input, setInput] = useState("")
   const flatListRef = useRef<FlatList>(null)
+  const userScrolledUpRef = useRef(false)
+  const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Auto-scroll on new messages — but only if the user hasn't scrolled up to
+  // read history. Otherwise streaming updates would yank them back to bottom.
+  const maybeScrollToEnd = useCallback(() => {
+    if (userScrolledUpRef.current) return
+    if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current)
+    scrollTimerRef.current = setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 50)
+  }, [])
 
   useEffect(() => {
-    setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100)
-  }, [messages])
+    maybeScrollToEnd()
+  }, [messages, maybeScrollToEnd])
+
+  useEffect(() => {
+    return () => {
+      if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current)
+    }
+  }, [])
 
   const handleSend = () => {
     if (!input.trim() || sending) return
     sendMessage(input.trim())
     setInput("")
+    userScrolledUpRef.current = false
+  }
+
+  const onScroll = (event: { nativeEvent: { layoutMeasurement: { height: number }; contentOffset: { y: number }; contentSize: { height: number } } }) => {
+    const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent
+    // Consider the user "at the bottom" if within 80px of the end.
+    const atBottom = contentOffset.y + layoutMeasurement.height >= contentSize.height - 80
+    userScrolledUpRef.current = !atBottom
   }
 
   const renderMessage = ({ item }: { item: Message }) => {
@@ -51,9 +77,14 @@ export function ChatScreen({ sessionID, directory, onBack }: Props) {
     )
   }
 
+  // Android's default adjustResize already handles the keyboard; setting
+  // behavior="height" on top of that double-offsets the input bar. iOS still
+  // needs behavior="padding".
+  const keyboardBehavior = Platform.OS === "ios" ? ("padding" as const) : undefined
+
   return (
-    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}>
-      <View style={styles.header}>
+    <KeyboardAvoidingView style={styles.container} behavior={keyboardBehavior} keyboardVerticalOffset={insets.top}>
+      <View style={[styles.header, { paddingTop: insets.top + theme.spacing.sm }]}>
         <TouchableOpacity onPress={onBack} style={styles.backButton}>
           <Text style={styles.backButtonText}>← 返回</Text>
         </TouchableOpacity>
@@ -65,11 +96,20 @@ export function ChatScreen({ sessionID, directory, onBack }: Props) {
         )}
       </View>
 
+      {sseHealth === "reconnecting" && (
+        <View style={styles.sseBanner}>
+          <ActivityIndicator size="small" color={theme.colors.warning} />
+          <Text style={styles.sseBannerText}>实时连接断开，正在重连...</Text>
+        </View>
+      )}
+
       <FlatList
         ref={flatListRef}
         data={messages}
         keyExtractor={(item) => item.id}
         renderItem={renderMessage}
+        onScroll={onScroll}
+        scrollEventThrottle={200}
         style={styles.messageList}
         contentContainerStyle={styles.messageListContent}
         ListEmptyComponent={
@@ -82,6 +122,14 @@ export function ChatScreen({ sessionID, directory, onBack }: Props) {
         }
       />
 
+      {pendingPermission && (
+        <PermissionCard
+          permission={pendingPermission.permission}
+          patterns={pendingPermission.patterns}
+          onReply={replyPermission}
+        />
+      )}
+
       {sending && (
         <View style={styles.typingIndicator}>
           <ActivityIndicator size="small" color={theme.colors.primary} />
@@ -89,7 +137,7 @@ export function ChatScreen({ sessionID, directory, onBack }: Props) {
         </View>
       )}
 
-      <View style={styles.inputBar}>
+      <View style={[styles.inputBar, { paddingBottom: insets.bottom + theme.spacing.md }]}>
         <TextInput
           style={styles.input}
           placeholder="输入指令..."
@@ -109,6 +157,41 @@ export function ChatScreen({ sessionID, directory, onBack }: Props) {
         </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>
+  )
+}
+
+function PermissionCard({
+  permission,
+  patterns,
+  onReply,
+}: {
+  permission: string
+  patterns: string[]
+  onReply: (response: PermissionResponse) => void
+}) {
+  return (
+    <View style={styles.permCard}>
+      <View style={styles.permHeader}>
+        <Text style={styles.permIcon}>🔐</Text>
+        <Text style={styles.permTitle} numberOfLines={1}>请求权限：{permission}</Text>
+      </View>
+      {patterns.length > 0 && (
+        <ScrollView style={styles.permPatterns} scrollEnabled={patterns.join(", ").length > 120}>
+          <Text style={styles.permPatternsText}>{patterns.join("\n")}</Text>
+        </ScrollView>
+      )}
+      <View style={styles.permActions}>
+        <TouchableOpacity style={[styles.permButton, styles.permAllow]} onPress={() => onReply("once")}>
+          <Text style={styles.permButtonText}>允许一次</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.permButton, styles.permAlways]} onPress={() => onReply("always")}>
+          <Text style={styles.permButtonText}>永久允许</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[styles.permButton, styles.permReject]} onPress={() => onReply("reject")}>
+          <Text style={styles.permButtonText}>拒绝</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
   )
 }
 
@@ -166,9 +249,11 @@ function CollapsibleCard({
         ) : null}
       </TouchableOpacity>
       {expanded && hasBody && text ? (
-        <View style={styles.cardBody}>
+        // Cap body height so long tool output doesn't take over the screen;
+        // scroll inside.
+        <ScrollView style={styles.cardBody} bounces={false}>
           <Text style={[styles.cardBodyText, mono && styles.monoText]}>{text}</Text>
-        </View>
+        </ScrollView>
       ) : null}
     </View>
   )
@@ -176,12 +261,14 @@ function CollapsibleCard({
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },
-  header: { flexDirection: "row", alignItems: "center", padding: theme.spacing.lg, paddingTop: 56, backgroundColor: theme.colors.surface, borderBottomWidth: 1, borderBottomColor: theme.colors.border, gap: theme.spacing.md },
+  header: { flexDirection: "row", alignItems: "center", padding: theme.spacing.lg, backgroundColor: theme.colors.surface, borderBottomWidth: 1, borderBottomColor: theme.colors.border, gap: theme.spacing.md },
   backButton: { padding: theme.spacing.sm },
   backButtonText: { color: theme.colors.primary, fontSize: theme.fontSize.md },
   headerTitle: { flex: 1, color: theme.colors.text, fontSize: theme.fontSize.lg, fontWeight: "600" },
   stopButton: { backgroundColor: theme.colors.error, borderRadius: theme.radius.sm, paddingHorizontal: theme.spacing.md, paddingVertical: theme.spacing.sm },
   stopButtonText: { color: "#fff", fontSize: theme.fontSize.sm, fontWeight: "600" },
+  sseBanner: { flexDirection: "row", alignItems: "center", justifyContent: "center", paddingVertical: theme.spacing.sm, backgroundColor: theme.colors.surface, gap: theme.spacing.sm },
+  sseBannerText: { color: theme.colors.warning, fontSize: theme.fontSize.sm },
   messageList: { flex: 1 },
   messageListContent: { padding: theme.spacing.lg, paddingBottom: theme.spacing.xl },
   messageRow: { flexDirection: "row", marginBottom: theme.spacing.lg, gap: theme.spacing.sm },
@@ -200,18 +287,31 @@ const styles = StyleSheet.create({
   emptySubtitle: { fontSize: theme.fontSize.md, color: theme.colors.textFaint },
   typingIndicator: { flexDirection: "row", alignItems: "center", paddingHorizontal: theme.spacing.xl, paddingVertical: theme.spacing.sm, gap: theme.spacing.sm },
   typingText: { color: theme.colors.textMuted, fontSize: theme.fontSize.sm },
-  inputBar: { flexDirection: "row", alignItems: "flex-end", padding: theme.spacing.lg, paddingBottom: theme.spacing.lg, backgroundColor: theme.colors.surface, borderTopWidth: 1, borderTopColor: theme.colors.border, gap: theme.spacing.sm },
+  inputBar: { flexDirection: "row", alignItems: "flex-end", padding: theme.spacing.lg, backgroundColor: theme.colors.surface, borderTopWidth: 1, borderTopColor: theme.colors.border, gap: theme.spacing.sm },
   input: { flex: 1, backgroundColor: theme.colors.surfaceLight, borderRadius: theme.radius.lg, padding: theme.spacing.lg, color: theme.colors.text, fontSize: theme.fontSize.md, minHeight: 48, maxHeight: 120, borderWidth: 1, borderColor: theme.colors.border },
   sendButton: { width: 40, height: 40, borderRadius: 20, backgroundColor: theme.colors.primary, justifyContent: "center", alignItems: "center" },
   sendButtonDisabled: { opacity: 0.4 },
   sendButtonText: { color: "#fff", fontSize: theme.fontSize.xl, fontWeight: "700" },
+  // Permission request card
+  permCard: { backgroundColor: theme.colors.surface, borderTopWidth: 1, borderBottomWidth: 1, borderColor: theme.colors.warning, padding: theme.spacing.lg },
+  permHeader: { flexDirection: "row", alignItems: "center", gap: theme.spacing.sm, marginBottom: theme.spacing.sm },
+  permIcon: { fontSize: theme.fontSize.lg },
+  permTitle: { color: theme.colors.text, fontSize: theme.fontSize.md, fontWeight: "600", flex: 1 },
+  permPatterns: { maxHeight: 100, marginBottom: theme.spacing.md, backgroundColor: theme.colors.background, borderRadius: theme.radius.sm, padding: theme.spacing.sm },
+  permPatternsText: { color: theme.colors.textMuted, fontSize: theme.fontSize.xs, fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace" },
+  permActions: { flexDirection: "row", gap: theme.spacing.sm },
+  permButton: { flex: 1, borderRadius: theme.radius.sm, paddingVertical: theme.spacing.md, alignItems: "center" },
+  permAllow: { backgroundColor: theme.colors.primary },
+  permAlways: { backgroundColor: theme.colors.success },
+  permReject: { backgroundColor: theme.colors.error },
+  permButtonText: { color: "#fff", fontSize: theme.fontSize.sm, fontWeight: "600" },
   card: { backgroundColor: theme.colors.background, borderRadius: theme.radius.md, borderWidth: 1, borderColor: theme.colors.border, overflow: "hidden" },
   cardHeader: { flexDirection: "row", alignItems: "center", paddingVertical: theme.spacing.sm, paddingHorizontal: theme.spacing.md, gap: theme.spacing.sm },
   cardIcon: { fontSize: theme.fontSize.sm },
   cardTitle: { flexShrink: 1, color: theme.colors.text, fontSize: theme.fontSize.sm, fontWeight: "500" },
   cardBadge: { color: theme.colors.textFaint, fontSize: theme.fontSize.xs, backgroundColor: theme.colors.surface, borderRadius: theme.radius.xs, paddingHorizontal: theme.spacing.sm, paddingVertical: 2, overflow: "hidden" },
   cardChevron: { color: theme.colors.textMuted, fontSize: theme.fontSize.sm, marginLeft: "auto" },
-  cardBody: { padding: theme.spacing.md, paddingTop: theme.spacing.sm, borderTopWidth: 1, borderTopColor: theme.colors.border },
+  cardBody: { maxHeight: 300, padding: theme.spacing.md, paddingTop: theme.spacing.sm, borderTopWidth: 1, borderTopColor: theme.colors.border },
   cardBodyText: { color: theme.colors.text, fontSize: theme.fontSize.sm, lineHeight: 18 },
   monoText: { fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace", fontSize: theme.fontSize.xs },
 })

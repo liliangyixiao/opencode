@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react"
-import type { Message, SSEEvent } from "../types"
+import type { Message, SSEEvent, PermissionRequest, PermissionResponse } from "../types"
 import { api } from "../services/api"
 import { useConnection } from "./useConnection"
 
@@ -10,6 +10,11 @@ const MESSAGE_EVENT_TYPES = new Set([
   "message.part.updated",
   "message.removed",
 ])
+
+// 5-minute watchdog: if neither the SSE turn-end signal nor the status poll
+// clears `sending` within this window, force-clear it so the user is not
+// permanently locked out of the input when both realtime and polling fail.
+const SENDING_WATCHDOG_MS = 5 * 60 * 1000
 
 // Signals the end of an AI turn. `session.status` with status.type "idle" is the
 // canonical signal (status.ts). `session.next.step.ended/failed` only fire when
@@ -26,14 +31,30 @@ function isTurnEnd(event: SSEEvent): boolean {
   return false
 }
 
+// Build a PermissionRequest from a `permission.asked` event payload.
+function parsePermission(props: Record<string, unknown>): PermissionRequest | null {
+  const id = props.id as string | undefined
+  if (!id) return null
+  return {
+    id,
+    permission: (props.permission as string) ?? "",
+    patterns: (props.patterns as string[]) ?? [],
+    metadata: props.metadata as Record<string, unknown> | undefined,
+    always: props.always as string[] | undefined,
+  }
+}
+
 export function useChat(sessionID: string | null, directory?: string) {
   const { activeConnection, subscribe } = useConnection()
   const [messages, setMessages] = useState<Message[]>([])
   const [sending, setSending] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [pendingPermission, setPendingPermission] = useState<PermissionRequest | null>(null)
   const directoryRef = useRef(directory)
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const watchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const sessionIDRef = useRef(sessionID)
+  const loadSeqRef = useRef(0)
   const pendingReloadRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const activeConnectionRef = useRef(activeConnection)
   activeConnectionRef.current = activeConnection
@@ -42,9 +63,14 @@ export function useChat(sessionID: string | null, directory?: string) {
 
   const loadMessages = useCallback(async () => {
     const conn = activeConnectionRef.current
-    if (!conn || !sessionIDRef.current) return
+    const sid = sessionIDRef.current
+    if (!conn || !sid) return
+    // Guard against out-of-order responses when switching sessions rapidly:
+    // only the most recent invocation's result is applied.
+    const seq = ++loadSeqRef.current
     try {
-      const msgs = await api.getMessages(conn, sessionIDRef.current, directoryRef.current)
+      const msgs = await api.getMessages(conn, sid, directoryRef.current)
+      if (seq !== loadSeqRef.current) return
       setMessages(msgs)
     } catch (err) {
       console.error("[useChat] Failed to load messages:", err)
@@ -56,7 +82,16 @@ export function useChat(sessionID: string | null, directory?: string) {
       clearInterval(pollingRef.current)
       pollingRef.current = null
     }
+    if (watchdogRef.current) {
+      clearTimeout(watchdogRef.current)
+      watchdogRef.current = null
+    }
   }, [])
+
+  const clearSending = useCallback(() => {
+    setSending(false)
+    stopPolling()
+  }, [stopPolling])
 
   // Fallback poll: refresh messages AND check session status. If the SSE stream
   // missed the `session.status` idle event, this is what clears `sending`.
@@ -67,14 +102,11 @@ export function useChat(sessionID: string | null, directory?: string) {
     await loadMessages()
     try {
       const status = await api.getSessionStatus(conn, sid, directoryRef.current)
-      if (status === "idle") {
-        setSending(false)
-        stopPolling()
-      }
+      if (status === "idle") clearSending()
     } catch (err) {
       console.error("[useChat] Failed to poll session status:", err)
     }
-  }, [loadMessages, stopPolling])
+  }, [clearSending, loadMessages])
 
   const sendMessage = useCallback(
     async (content: string) => {
@@ -83,18 +115,19 @@ export function useChat(sessionID: string | null, directory?: string) {
       setSending(true)
       try {
         await api.sendMessage(conn, sessionIDRef.current, { content }, directoryRef.current)
-        // Primary updates arrive via the subscribe() SSE handler below. This poll
-        // is only a fallback for missed events (some transports drop idle events
-        // even while delivering message events — see cli/.../stream.transport.ts).
         stopPolling()
         pollingRef.current = setInterval(pollOnce, 3000)
+        // Watchdog: if neither SSE nor polling clears sending within 5 min
+        // (both realtime and polling failed), unlock the input so the user is
+        // not permanently stuck.
+        watchdogRef.current = setTimeout(clearSending, SENDING_WATCHDOG_MS)
         pollOnce()
       } catch (err) {
         console.error("Failed to send message:", err)
         setSending(false)
       }
     },
-    [pollOnce, stopPolling],
+    [clearSending, pollOnce, stopPolling],
   )
 
   const abort = useCallback(async () => {
@@ -107,16 +140,42 @@ export function useChat(sessionID: string | null, directory?: string) {
     }
   }, [])
 
+  const replyPermission = useCallback(
+    async (response: PermissionResponse) => {
+      const conn = activeConnectionRef.current
+      const sid = sessionIDRef.current
+      const req = pendingPermission
+      if (!conn || !sid || !req) return
+      try {
+        await api.replyPermission(conn, sid, req.id, response, directoryRef.current)
+        setPendingPermission(null)
+      } catch (err) {
+        console.error("Failed to reply permission:", err)
+      }
+    },
+    [pendingPermission],
+  )
+
   // Subscribe to SSE events for real-time updates.
   useEffect(() => {
     const unsubscribe = subscribe((event: SSEEvent) => {
       const eventSessionID = (event.properties?.sessionID as string | undefined) ?? null
-      // Ignore events for other sessions; only refresh the one we're viewing.
       if (eventSessionID && sessionIDRef.current && eventSessionID !== sessionIDRef.current) return
 
+      // Permission request: surface to UI. Block on user decision.
+      if (event.type === "permission.asked") {
+        const req = parsePermission(event.properties)
+        if (req) setPendingPermission(req)
+        return
+      }
+      // Permission was replied elsewhere (e.g. desktop), dismiss local prompt.
+      if (event.type === "permission.replied") {
+        setPendingPermission(null)
+        return
+      }
+
       if (isTurnEnd(event)) {
-        setSending(false)
-        stopPolling()
+        clearSending()
         if (pendingReloadRef.current) clearTimeout(pendingReloadRef.current)
         loadMessages()
         return
@@ -130,16 +189,19 @@ export function useChat(sessionID: string | null, directory?: string) {
       }
     })
     return unsubscribe
-  }, [subscribe, loadMessages, stopPolling])
+  }, [subscribe, loadMessages, clearSending])
 
-  // Load messages when session changes
+  // Load messages when session changes. Clear state first so switching sessions
+  // does not briefly show the previous session's messages.
   useEffect(() => {
     if (!sessionID) return
+    setMessages([])
+    setPendingPermission(null)
     setLoading(true)
     loadMessages().finally(() => setLoading(false))
   }, [sessionID, loadMessages])
 
-  // Cleanup polling and pending reload on unmount
+  // Cleanup timers on unmount
   useEffect(() => {
     return () => {
       stopPolling()
@@ -147,5 +209,14 @@ export function useChat(sessionID: string | null, directory?: string) {
     }
   }, [stopPolling])
 
-  return { messages, sending, loading, sendMessage, abort, reload: loadMessages }
+  return {
+    messages,
+    sending,
+    loading,
+    pendingPermission,
+    sendMessage,
+    abort,
+    replyPermission,
+    reload: loadMessages,
+  }
 }

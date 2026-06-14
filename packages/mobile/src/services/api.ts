@@ -1,4 +1,4 @@
-import type { ServerConnection, ServerHealth, ProjectInfo, SessionInfo, Message, MessagePart, PromptPayload, SSEEvent } from "../types"
+import type { ServerConnection, ServerHealth, ProjectInfo, SessionInfo, Message, MessagePart, PromptPayload, PermissionResponse, SSEEvent } from "../types"
 
 function baseUrl(conn: ServerConnection): string {
   const scheme = conn.tls ? "https" : "http"
@@ -143,12 +143,47 @@ export const api = {
     if (!res.ok) throw new Error(`Abort session failed: ${res.status}`)
   },
 
-  createEventSource(conn: ServerConnection, directory?: string): { close: () => void; onEvent: (handler: (event: SSEEvent) => void) => void } {
+  async deleteSession(conn: ServerConnection, sessionID: string, directory?: string): Promise<void> {
+    const res = await fetch(`${baseUrl(conn)}/session/${sessionID}${queryDir(directory)}`, {
+      method: "DELETE",
+      headers: authHeaders(conn),
+    })
+    if (!res.ok) throw new Error(`Delete session failed: ${res.status}`)
+  },
+
+  // POST /session/:id/permissions/:permissionID body { response }.
+  // response is "once" | "always" | "reject".
+  async replyPermission(
+    conn: ServerConnection,
+    sessionID: string,
+    permissionID: string,
+    response: PermissionResponse,
+    directory?: string,
+  ): Promise<void> {
+    const res = await fetch(`${baseUrl(conn)}/session/${sessionID}/permissions/${permissionID}${queryDir(directory)}`, {
+      method: "POST",
+      headers: authHeaders(conn),
+      body: JSON.stringify({ response }),
+    })
+    if (!res.ok) throw new Error(`Reply permission failed: ${res.status}`)
+  },
+
+  createEventSource(
+    conn: ServerConnection,
+    directory: string | undefined,
+    onDisconnect: () => void,
+    onConnect: () => void,
+  ): { close: () => void; onEvent: (handler: (event: SSEEvent) => void) => void } {
     const EventSourcePolyfill = require("event-source-polyfill").EventSourcePolyfill
     const url = `${baseUrl(conn)}/event${queryDir(directory)}`
     const es = new EventSourcePolyfill(url, { headers: authHeaders(conn) })
     const handlers: Array<(event: SSEEvent) => void> = []
 
+    es.onopen = () => onConnect()
+    // The polyfill fires onerror on any drop (network change, proxy timeout,
+    // server restart). It does NOT reliably auto-reconnect in React Native,
+    // so the caller treats this as "needs manual reconnect".
+    es.onerror = () => onDisconnect()
     es.onmessage = (event: MessageEvent) => {
       try {
         const data = JSON.parse(event.data) as SSEEvent

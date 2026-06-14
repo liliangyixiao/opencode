@@ -22,8 +22,23 @@ export interface SessionInfo {
   directory?: string
   title?: string
   version?: string
+  cost?: number
+  tokens?: { input?: number; output?: number; reasoning?: number; cache?: { read?: number; write?: number } }
   time: { created: number; updated: number }
 }
+
+// Permission request emitted by the server as `permission.asked` events.
+// `id` is the request id used to reply via POST /session/:id/permissions/:id.
+export interface PermissionRequest {
+  id: string
+  permission: string
+  patterns: string[]
+  metadata?: Record<string, unknown>
+  always?: string[]
+}
+
+// Reply values for POST /session/:id/permissions/:id body `{ response }`.
+export type PermissionResponse = "once" | "always" | "reject"
 
 export type ToolPartStatus = "pending" | "running" | "completed" | "error"
 

@@ -10,6 +10,10 @@ function loadConnections(): ServerConnection[] {
     const raw = SecureStore.getItem(STORAGE_KEY)
     return raw ? JSON.parse(raw) : []
   } catch {
+    // Distinguish "no data" (return empty) from corruption. We deliberately do
+    // NOT overwrite storage here — saveConnections([]) would permanently wipe
+    // the user's saved connections if JSON.parse failed on a transient error.
+    console.error("[useConnection] Failed to parse stored connections, leaving storage intact")
     return []
   }
 }
@@ -18,14 +22,23 @@ function saveConnections(connections: ServerConnection[]) {
   SecureStore.setItem(STORAGE_KEY, JSON.stringify(connections))
 }
 
+// SSE connection health, surfaced to the UI so users see when the realtime
+// stream is down (mobile network switches, proxy timeouts, server restarts).
+export type SseHealth = "connected" | "reconnecting" | "disconnected"
+
 interface ConnectionStore {
   connections: ServerConnection[]
   activeConnection: ServerConnection | null
   status: ConnectionStatus
+  directory: string | undefined
+  sseHealth: SseHealth
   connect: (conn: ServerConnection) => Promise<boolean>
   disconnect: () => void
   addConnection: (conn: ServerConnection) => void
   removeConnection: (id: string) => void
+  // Switch the workspace the SSE stream is scoped to. The server's /event
+  // stream is per-directory, so changing projects requires reconnecting.
+  switchWorkspace: (directory: string | undefined) => void
   subscribe: (handler: (event: SSEEvent) => void) => () => void
 }
 
@@ -35,8 +48,50 @@ export function ConnectionProvider({ children }: { children: ReactNode }) {
   const [connections, setConnections] = useState<ServerConnection[]>(loadConnections)
   const [activeConnection, setActiveConnection] = useState<ServerConnection | null>(null)
   const [status, setStatus] = useState<ConnectionStatus>("disconnected")
+  const [directory, setDirectory] = useState<string | undefined>(undefined)
+  const [sseHealth, setSseHealth] = useState<SseHealth>("disconnected")
   const eventSourceRef = useRef<{ close: () => void; onEvent: (h: (e: SSEEvent) => void) => void } | null>(null)
   const handlersRef = useRef<Array<(event: SSEEvent) => void>>([])
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const reconnectAttemptRef = useRef(0)
+  const closedRef = useRef(false)
+
+  // Open (or reopen) the SSE stream for the current connection + directory.
+  // The server's /event is per-workspace, so directory scopes which events arrive.
+  const openEventSource = useCallback(
+    (conn: ServerConnection, dir: string | undefined) => {
+      eventSourceRef.current?.close()
+      closedRef.current = false
+
+      const es = api.createEventSource(
+        conn,
+        dir,
+        // onDisconnect: the polyfill does not reliably auto-reconnect in RN,
+        // so we schedule a manual reconnect with exponential backoff.
+        () => {
+          if (closedRef.current) return
+          setSseHealth("reconnecting")
+          const attempt = reconnectAttemptRef.current++
+          const delay = Math.min(1000 * 2 ** attempt, 30000)
+          if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current)
+          reconnectTimerRef.current = setTimeout(() => {
+            if (closedRef.current) return
+            openEventSource(conn, dir)
+          }, delay)
+        },
+        // onConnect: stream is live again. Reset backoff.
+        () => {
+          reconnectAttemptRef.current = 0
+          setSseHealth("connected")
+        },
+      )
+      es.onEvent((event) => {
+        handlersRef.current.forEach((h) => h(event))
+      })
+      eventSourceRef.current = es
+    },
+    [],
+  )
 
   const connect = useCallback(async (conn: ServerConnection): Promise<boolean> => {
     setStatus("connecting")
@@ -46,39 +101,59 @@ export function ConnectionProvider({ children }: { children: ReactNode }) {
         setStatus("error")
         return false
       }
-      setActiveConnection(conn)
+      const updated = { ...conn, lastConnected: Date.now() }
+      setActiveConnection(updated)
       setStatus("connected")
 
-      const updated = { ...conn, lastConnected: Date.now() }
       setConnections((prev) => {
-        const next = prev.map((c) => (c.id === conn.id ? updated : c))
+        const next = prev.some((c) => c.id === conn.id) ? prev.map((c) => (c.id === conn.id ? updated : c)) : [...prev, updated]
         saveConnections(next)
         return next
       })
 
-      eventSourceRef.current?.close()
-      eventSourceRef.current = api.createEventSource(conn)
-      eventSourceRef.current.onEvent((event) => {
-        handlersRef.current.forEach((h) => h(event))
-      })
-
+      setDirectory(undefined)
+      openEventSource(updated, undefined)
       return true
     } catch {
       setStatus("error")
       return false
     }
-  }, [])
+  }, [openEventSource])
 
   const disconnect = useCallback(() => {
+    closedRef.current = true
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current)
+      reconnectTimerRef.current = null
+    }
     eventSourceRef.current?.close()
     eventSourceRef.current = null
     setActiveConnection(null)
+    setDirectory(undefined)
     setStatus("disconnected")
+    setSseHealth("disconnected")
+    reconnectAttemptRef.current = 0
   }, [])
+
+  // Reconnect the SSE stream scoped to a different workspace (project).
+  // Without this, events for the newly selected project never arrive.
+  const switchWorkspace = useCallback((dir: string | undefined) => {
+    setDirectory(dir)
+    // dir is captured fresh below via the activeConnection ref pattern
+    const conn = activeConnection
+    if (!conn) return
+    reconnectAttemptRef.current = 0
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current)
+      reconnectTimerRef.current = null
+    }
+    openEventSource(conn, dir)
+  }, [activeConnection, openEventSource])
 
   const addConnection = useCallback((conn: ServerConnection) => {
     setConnections((prev) => {
-      const next = [...prev, conn]
+      // Dedupe by id: update existing rather than append a duplicate.
+      const next = prev.some((c) => c.id === conn.id) ? prev.map((c) => (c.id === conn.id ? conn : c)) : [...prev, conn]
       saveConnections(next)
       return next
     })
@@ -90,8 +165,14 @@ export function ConnectionProvider({ children }: { children: ReactNode }) {
       saveConnections(next)
       return next
     })
-    if (activeConnection?.id === id) disconnect()
-  }, [activeConnection, disconnect])
+    setActiveConnection((current) => {
+      if (current?.id === id) {
+        disconnect()
+        return null
+      }
+      return current
+    })
+  }, [disconnect])
 
   const subscribe = useCallback((handler: (event: SSEEvent) => void) => {
     handlersRef.current.push(handler)
@@ -102,6 +183,8 @@ export function ConnectionProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     return () => {
+      closedRef.current = true
+      if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current)
       eventSourceRef.current?.close()
     }
   }, [])
@@ -112,10 +195,13 @@ export function ConnectionProvider({ children }: { children: ReactNode }) {
         connections,
         activeConnection,
         status,
+        directory,
+        sseHealth,
         connect,
         disconnect,
         addConnection,
         removeConnection,
+        switchWorkspace,
         subscribe,
       }}
     >

@@ -1,10 +1,12 @@
 import React, { useState } from "react"
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator } from "react-native"
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, ScrollView, KeyboardAvoidingView, Platform } from "react-native"
+import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { theme } from "../theme"
 import { useConnection } from "../hooks/useConnection"
 import type { ServerConnection } from "../types"
 
 export function ConnectScreen() {
+  const insets = useSafeAreaInsets()
   const { connections, connect, addConnection, removeConnection, status, activeConnection } = useConnection()
   const [host, setHost] = useState("")
   const [port, setPort] = useState("5001")
@@ -40,51 +42,53 @@ export function ConnectScreen() {
   }
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>OpenCode AI</Text>
-      <Text style={styles.subtitle}>连接到 Mac 端 OpenCode</Text>
+    <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+      <ScrollView contentContainerStyle={[styles.scrollContent, { paddingTop: insets.top + theme.spacing.xxl }]} keyboardShouldPersistTaps="handled">
+        <Text style={styles.title}>OpenCode AI</Text>
+        <Text style={styles.subtitle}>连接到 Mac 端 OpenCode</Text>
 
-      {activeConnection && status === "connected" && (
-        <View style={styles.connectedBanner}>
-          <View style={styles.statusDot} />
-          <Text style={styles.connectedText}>已连接: {activeConnection.name}</Text>
-        </View>
-      )}
+        {activeConnection && status === "connected" && (
+          <View style={styles.connectedBanner}>
+            <View style={styles.statusDot} />
+            <Text style={styles.connectedText}>已连接: {activeConnection.name}</Text>
+          </View>
+        )}
 
-      <View style={styles.form}>
-        <TextInput style={styles.input} placeholder="服务器名称" placeholderTextColor={theme.colors.textFaint} value={name} onChangeText={setName} />
-        <TextInput style={styles.input} placeholder="地址 (如 192.168.1.100 或 opencode.example.com)" placeholderTextColor={theme.colors.textFaint} value={host} onChangeText={setHost} keyboardType="url" autoCapitalize="none" />
-        <View style={styles.row}>
-          <TextInput style={[styles.input, styles.portInput]} placeholder="端口" placeholderTextColor={theme.colors.textFaint} value={port} onChangeText={setPort} keyboardType="number-pad" />
-          <TouchableOpacity
-            style={[styles.tlsToggle, tls && styles.tlsToggleActive]}
-            onPress={() => setTls((v) => !v)}
-          >
-            <Text style={[styles.tlsToggleText, tls && styles.tlsToggleTextActive]}>HTTPS</Text>
+        <View style={styles.form}>
+          <TextInput style={styles.input} placeholder="服务器名称" placeholderTextColor={theme.colors.textFaint} value={name} onChangeText={setName} />
+          <TextInput style={styles.input} placeholder="地址 (如 192.168.1.100 或 opencode.example.com)" placeholderTextColor={theme.colors.textFaint} value={host} onChangeText={setHost} keyboardType="url" autoCapitalize="none" />
+          <View style={styles.row}>
+            <TextInput style={[styles.input, styles.portInput]} placeholder="端口" placeholderTextColor={theme.colors.textFaint} value={port} onChangeText={setPort} keyboardType="number-pad" />
+            <TouchableOpacity
+              style={[styles.tlsToggle, tls && styles.tlsToggleActive]}
+              onPress={() => setTls((v) => !v)}
+            >
+              <Text style={[styles.tlsToggleText, tls && styles.tlsToggleTextActive]}>HTTPS</Text>
+            </TouchableOpacity>
+          </View>
+          <TextInput style={styles.input} placeholder="密码 (可选)" placeholderTextColor={theme.colors.textFaint} value={password} onChangeText={setPassword} secureTextEntry />
+          <TouchableOpacity style={styles.addButton} onPress={handleAdd}>
+            <Text style={styles.addButtonText}>添加并连接</Text>
           </TouchableOpacity>
         </View>
-        <TextInput style={styles.input} placeholder="密码 (可选)" placeholderTextColor={theme.colors.textFaint} value={password} onChangeText={setPassword} secureTextEntry />
-        <TouchableOpacity style={styles.addButton} onPress={handleAdd}>
-          <Text style={styles.addButtonText}>添加并连接</Text>
-        </TouchableOpacity>
-      </View>
 
-      {connections.length > 0 && (
-        <View style={styles.savedSection}>
-          <Text style={styles.sectionTitle}>已保存的连接</Text>
-          {connections.map((conn) => (
-            <View key={conn.id} style={styles.savedItem}>
-              <TouchableOpacity style={styles.savedItemInfo} onPress={() => handleConnect(conn)} disabled={connecting}>
-                <Text style={styles.savedItemName}>{conn.name}</Text>
-                <Text style={styles.savedItemHost}>{conn.tls ? "https" : "http"}://{conn.host}:{conn.port}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.deleteButton} onPress={() => removeConnection(conn.id)}>
-                <Text style={styles.deleteButtonText}>删除</Text>
-              </TouchableOpacity>
-            </View>
-          ))}
-        </View>
-      )}
+        {connections.length > 0 && (
+          <View style={styles.savedSection}>
+            <Text style={styles.sectionTitle}>已保存的连接</Text>
+            {connections.map((conn) => (
+              <View key={conn.id} style={styles.savedItem}>
+                <TouchableOpacity style={styles.savedItemInfo} onPress={() => handleConnect(conn)} disabled={connecting}>
+                  <Text style={styles.savedItemName}>{conn.name}</Text>
+                  <Text style={styles.savedItemHost}>{conn.tls ? "https" : "http"}://{conn.host}:{conn.port}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.deleteButton} onPress={() => removeConnection(conn.id)}>
+                  <Text style={styles.deleteButtonText}>删除</Text>
+                </TouchableOpacity>
+              </View>
+            ))}
+          </View>
+        )}
+      </ScrollView>
 
       {connecting && (
         <View style={styles.overlay}>
@@ -92,13 +96,14 @@ export function ConnectScreen() {
           <Text style={styles.overlayText}>正在连接...</Text>
         </View>
       )}
-    </View>
+    </KeyboardAvoidingView>
   )
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: theme.colors.background, padding: theme.spacing.xl },
-  title: { fontSize: theme.fontSize.xxl, fontWeight: "700", color: theme.colors.text, textAlign: "center", marginTop: 60 },
+  container: { flex: 1, backgroundColor: theme.colors.background },
+  scrollContent: { padding: theme.spacing.xl, paddingBottom: theme.spacing.xxl },
+  title: { fontSize: theme.fontSize.xxl, fontWeight: "700", color: theme.colors.text, textAlign: "center" },
   subtitle: { fontSize: theme.fontSize.md, color: theme.colors.textMuted, textAlign: "center", marginTop: theme.spacing.sm, marginBottom: theme.spacing.xxl },
   connectedBanner: { flexDirection: "row", alignItems: "center", backgroundColor: theme.colors.surface, padding: theme.spacing.lg, borderRadius: theme.radius.md, marginBottom: theme.spacing.xl, gap: theme.spacing.sm },
   statusDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: theme.colors.success },
