@@ -9,23 +9,24 @@ import { ChatScreen } from "./screens/ChatScreen"
 type Screen = "connect" | "projects" | "chat"
 
 function AppContent() {
-  const { status } = useConnection()
+  const { status, activeConnection } = useConnection()
   const [screen, setScreen] = useState<Screen>(status === "connected" ? "projects" : "connect")
   const [chatSessionID, setChatSessionID] = useState<string>("")
   const [chatDirectory, setChatDirectory] = useState<string>("")
+  const [selectedDirectory, setSelectedDirectory] = useState<string | null>(null)
 
   const handleConnected = () => setScreen("projects")
   const handleSelectProject = (directory: string, _name: string) => {
-    setChatDirectory(directory)
-    // Create a new session for this project
-    setScreen("chat")
+    setSelectedDirectory(directory)
   }
   const handleSelectSession = (sessionID: string, directory: string) => {
     setChatSessionID(sessionID)
     setChatDirectory(directory)
     setScreen("chat")
   }
-  const handleBack = () => setScreen("projects")
+  const handleBack = () => {
+    setScreen("projects")
+  }
 
   // Auto-switch to projects when connected
   if (status === "connected" && screen === "connect") {
@@ -39,7 +40,7 @@ function AppContent() {
     <View style={styles.container}>
       <StatusBar style="light" />
       {screen === "connect" && <ConnectScreen />}
-      {screen === "projects" && <ProjectScreen onSelectProject={handleSelectProject} onSelectSession={handleSelectSession} />}
+      {screen === "projects" && <ProjectScreen onSelectProject={handleSelectProject} onSelectSession={handleSelectSession} selectedDirectory={selectedDirectory} />}
       {screen === "chat" && chatSessionID && <ChatScreen sessionID={chatSessionID} directory={chatDirectory} onBack={handleBack} />}
     </View>
   )

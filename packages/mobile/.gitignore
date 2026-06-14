@@ -1,0 +1,19 @@
+# Expo
+.expo/
+
+# Native build artifacts
+android/
+ios/
+
+# Logs
+*.log
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# Local env
+.env
+.env.local
+
+# macOS
+.DS_Store

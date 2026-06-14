@@ -7,7 +7,7 @@ import type { ServerConnection } from "../types"
 export function ConnectScreen() {
   const { connections, connect, addConnection, removeConnection, status, activeConnection } = useConnection()
   const [host, setHost] = useState("")
-  const [port, setPort] = useState("3000")
+  const [port, setPort] = useState("5001")
   const [password, setPassword] = useState("")
   const [name, setName] = useState("")
   const [connecting, setConnecting] = useState(false)
@@ -31,7 +31,7 @@ export function ConnectScreen() {
     addConnection(conn)
     handleConnect(conn)
     setHost("")
-    setPort("3000")
+    setPort("5001")
     setPassword("")
     setName("")
   }

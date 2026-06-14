@@ -1,0 +1,28 @@
+{
+  "cli": {
+    "version": ">= 12.0.0"
+  },
+  "build": {
+    "release": {
+      "android": {
+        "buildType": "app-bundle",
+        "gradleCommand": ":app:assembleRelease"
+      },
+      "env": {
+        "OPENCODE_CHANNEL": "prod"
+      }
+    },
+    "apk": {
+      "android": {
+        "buildType": "apk",
+        "gradleCommand": ":app:assembleRelease"
+      },
+      "env": {
+        "OPENCODE_CHANNEL": "prod"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}

@@ -287,25 +287,11 @@ const main = Effect.gen(function* () {
       if (!Number.isNaN(parsed)) return parsed
     }
 
-    const res = yield* Deferred.make<number, unknown>()
-    const server = createServer()
-    server.on("error", (e) => Deferred.failSync(res, () => e))
-    server.listen(0, "127.0.0.1", () => {
-      const address = server.address()
-      if (typeof address !== "object" || !address) {
-        server.close()
-        Deferred.failSync(res, () => new Error("Failed to get port"))
-        return
-      }
-      const port = address.port
-      server.close(() => Effect.runSync(Deferred.succeed(res, port)))
-    })
-
-    return yield* Deferred.await(res)
+    return 5001
   })
-  const hostname = "127.0.0.1"
-  const url = `http://${hostname}:${port}`
-  const password = randomUUID()
+  const hostname = "0.0.0.0"
+  const url = `http://127.0.0.1:${port}`
+  const password = "opencode"
 
   const loadingTask = yield* Effect.gen(function* () {
     logger.log("sidecar connection started", { url })
