@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { Cause, Deferred, Effect, Exit, Fiber } from "effect"
-import { forwardInitializationFailure } from "./initialization"
+import { createWindowBeforeLoadingSettles, forwardInitializationFailure } from "./initialization"
 
 describe("desktop initialization", () => {
   const failure = new Error("sidecar startup failed")
@@ -33,5 +33,27 @@ describe("desktop initialization", () => {
     )
 
     expectFailure(exit)
+  })
+
+  test("creates the window before waiting for local server startup", async () => {
+    const createdBeforeStartupFinished = await Effect.runPromise(
+      Effect.gen(function* () {
+        const startupFinished = yield* Deferred.make<void>()
+        const loadingTask = yield* Deferred.await(startupFinished).pipe(Effect.forkChild)
+        let created = false
+
+        const waiting = yield* createWindowBeforeLoadingSettles(loadingTask, () => {
+          created = true
+        }).pipe(Effect.forkChild)
+        yield* Effect.sleep(0)
+
+        const result = created
+        yield* Deferred.succeed(startupFinished, undefined)
+        yield* Fiber.join(waiting)
+        return result
+      }),
+    )
+
+    expect(createdBeforeStartupFinished).toBe(true)
   })
 })
