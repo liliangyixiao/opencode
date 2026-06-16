@@ -73,6 +73,12 @@ type PlatformBase = {
   /** Set the default server URL to use on app startup (platform-specific) */
   setDefaultServer?(url: ServerConnection.Key | null): Promise<void> | void
 
+  /** Allow other devices on the LAN to reach the desktop server after restart */
+  getMobileServerEnabled?(): Promise<boolean> | boolean
+
+  /** Toggle LAN/mobile access for the desktop server after restart */
+  setMobileServerEnabled?(enabled: boolean): Promise<void> | void
+
   /** Manage WSL sidecar servers (Electron on Windows only) */
   wslServers?: WslServersPlatform
 

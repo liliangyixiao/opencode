@@ -138,6 +138,11 @@ export const SettingsGeneralV2: Component = () => {
     () => Promise.resolve(platform.getPinchZoomEnabled?.() ?? false).catch(() => false),
     { initialValue: false },
   )
+  const [mobileServer, { mutate: setMobileServer }] = createResource(
+    () => (desktop() && platform.getMobileServerEnabled ? true : false),
+    () => Promise.resolve(platform.getMobileServerEnabled?.() ?? false).catch(() => false),
+    { initialValue: false },
+  )
 
   onMount(() => {
     void theme.loadThemes()
@@ -182,6 +187,13 @@ export const SettingsGeneralV2: Component = () => {
     const update = platform.setPinchZoomEnabled?.(checked)
     if (!update) return
     void update.catch(() => setPinchZoom(!checked))
+  }
+
+  const onMobileServerChange = (checked: boolean) => {
+    setMobileServer(checked)
+    const update = platform.setMobileServerEnabled?.(checked)
+    if (!update) return
+    void update.catch(() => setMobileServer(!checked))
   }
 
   const colorSchemeOptions = createMemo((): { value: ColorScheme; label: string }[] => [
@@ -675,6 +687,15 @@ export const SettingsGeneralV2: Component = () => {
         <h3 class="settings-v2-section-title">{language.t("settings.general.section.display")}</h3>
 
         <SettingsListV2>
+          <SettingsRowV2
+            title={language.t("settings.general.row.mobileServer.title")}
+            description={language.t("settings.general.row.mobileServer.description")}
+          >
+            <div data-action="settings-mobile-server">
+              <Switch checked={mobileServer.latest} onChange={onMobileServerChange} />
+            </div>
+          </SettingsRowV2>
+
           <SettingsRowV2
             title={language.t("settings.general.row.pinchZoom.title")}
             description={language.t("settings.general.row.pinchZoom.description")}

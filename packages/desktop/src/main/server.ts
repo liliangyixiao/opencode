@@ -6,6 +6,7 @@ import { getLogger } from "./logging"
 import { getUserShell, loadShellEnv } from "./shell-env"
 import { getStore } from "./store"
 import { DEFAULT_SERVER_URL_KEY } from "./store-keys"
+import { localHealthcheckHostname } from "./mobile-server"
 
 export type HealthCheck = { wait: Promise<void> }
 
@@ -140,7 +141,7 @@ export async function spawnLocalServer(
   })
 
   const wait = (async () => {
-    const url = `http://${hostname}:${port}`
+    const url = `http://${localHealthcheckHostname(hostname)}:${port}`
     let healthy = false
     const gone = exit.promise.then((code) => {
       if (healthy) return

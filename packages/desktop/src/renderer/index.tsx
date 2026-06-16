@@ -234,6 +234,10 @@ const createPlatform = (): Platform => {
       await window.api.setDefaultServerUrl(url)
     },
 
+    getMobileServerEnabled: () => window.api.getMobileServerEnabled(),
+
+    setMobileServerEnabled: (enabled) => window.api.setMobileServerEnabled(enabled),
+
     wslServers: wslServersApi,
 
     getDisplayBackend: async () => {

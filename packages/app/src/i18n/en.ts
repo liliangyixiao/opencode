@@ -852,6 +852,9 @@ export const dict = {
     "Display the animated progress bar at the top of the session when the agent is working",
   "settings.general.row.newLayoutDesigns.title": "New layout and designs",
   "settings.general.row.newLayoutDesigns.description": "Enable the redesigned layout, home, composer, and session UI",
+  "settings.general.row.mobileServer.title": "Mobile access",
+  "settings.general.row.mobileServer.description":
+    "Allow phones and other LAN devices to connect to the desktop server. Requires restart.",
   "settings.general.row.pinchZoom.title": "Pinch to zoom",
   "settings.general.row.pinchZoom.description": "Allow trackpad pinch and Ctrl-scroll gestures to zoom",
 

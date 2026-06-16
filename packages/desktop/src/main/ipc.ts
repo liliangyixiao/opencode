@@ -27,6 +27,8 @@ type Deps = {
   consumeInitialDeepLinks: () => Promise<string[]> | string[]
   getDefaultServerUrl: () => Promise<string | null> | string | null
   setDefaultServerUrl: (url: string | null) => Promise<void> | void
+  getMobileServerEnabled: () => Promise<boolean> | boolean
+  setMobileServerEnabled: (enabled: boolean) => Promise<void> | void
   getDisplayBackend: () => Promise<string | null>
   setDisplayBackend: (backend: string | null) => Promise<void> | void
   parseMarkdown: (markdown: string) => Promise<string> | string
@@ -49,6 +51,10 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle("get-default-server-url", () => deps.getDefaultServerUrl())
   ipcMain.handle("set-default-server-url", (_event: IpcMainInvokeEvent, url: string | null) =>
     deps.setDefaultServerUrl(url),
+  )
+  ipcMain.handle("get-mobile-server-enabled", () => deps.getMobileServerEnabled())
+  ipcMain.handle("set-mobile-server-enabled", (_event: IpcMainInvokeEvent, enabled: boolean) =>
+    deps.setMobileServerEnabled(enabled),
   )
   ipcMain.handle("get-display-backend", () => deps.getDisplayBackend())
   ipcMain.handle("set-display-backend", (_event: IpcMainInvokeEvent, backend: string | null) =>

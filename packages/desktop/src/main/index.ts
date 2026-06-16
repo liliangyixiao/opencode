@@ -19,6 +19,7 @@ import { createWindowBeforeLoadingSettles, forwardInitializationFailure } from "
 import { exportDebugLogs, initCrashReporter, initLogging, startNetLog, write as writeLog } from "./logging"
 import { parseMarkdown } from "./markdown"
 import { createMenu } from "./menu"
+import { getMobileServerEnabled, mobileServerHostname, setMobileServerEnabled } from "./mobile-server"
 import {
   getDefaultServerUrl,
   preferAppEnv,
@@ -256,6 +257,8 @@ const main = Effect.gen(function* () {
     consumeInitialDeepLinks: () => pendingDeepLinks.splice(0),
     getDefaultServerUrl: () => getDefaultServerUrl(),
     setDefaultServerUrl: (url) => setDefaultServerUrl(url),
+    getMobileServerEnabled: () => getMobileServerEnabled(),
+    setMobileServerEnabled: (enabled) => setMobileServerEnabled(enabled),
     getDisplayBackend: async () => null,
     setDisplayBackend: async () => undefined,
     parseMarkdown: async (markdown) => parseMarkdown(markdown),
@@ -289,12 +292,13 @@ const main = Effect.gen(function* () {
 
     return 5001
   })
-  const hostname = "0.0.0.0"
+  const mobileServerEnabled = getMobileServerEnabled()
+  const hostname = mobileServerHostname(mobileServerEnabled)
   const url = `http://127.0.0.1:${port}`
   const password = "opencode"
 
   const loadingTask = yield* Effect.gen(function* () {
-    logger.log("sidecar connection started", { url })
+    logger.log("sidecar connection started", { url, hostname, mobileServerEnabled })
 
     ensureLoopbackNoProxy()
     useEnvProxy()
