@@ -67,7 +67,7 @@ export function convertTool(mcpTool: MCPToolDef, client: Client, timeout?: numbe
       )
       if (result.isError)
         throw new Error(
-          result.content
+          (result.content as Array<{ type: string; text: string }>)
             .flatMap((item) => (item.type === "text" ? [item.text] : []))
             .filter((text) => text.trim())
             .join("\n\n") || "MCP tool returned an error",
