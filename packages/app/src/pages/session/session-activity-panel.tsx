@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, For, Show } from "solid-js"
+import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js"
 import type { Part, Message } from "@opencode-ai/sdk/v2/client"
 import { ScrollView } from "@opencode-ai/ui/scroll-view"
 import { useSync } from "@/context/sync"
@@ -6,6 +6,8 @@ import { useSessionLayout } from "@/pages/session/session-layout"
 import {
   getSessionActivity,
   filterSessionActivityItems,
+  formatActivityDuration,
+  type SessionActivityDetailSection,
   type SessionActivityFilter,
   type SessionActivityItem,
   type SessionActivityStatus,
@@ -33,15 +35,6 @@ const filters: { value: SessionActivityFilter; label: string }[] = [
   { value: "subagent", label: "子 Agent" },
 ]
 
-function formatDuration(ms: number | undefined) {
-  if (ms === undefined) return "—"
-  if (ms < 1000) return `${ms}ms`
-  const seconds = ms / 1000
-  if (seconds < 60) return `${seconds.toFixed(seconds < 10 ? 1 : 0)}s`
-  const minutes = Math.floor(seconds / 60)
-  return `${minutes}m ${Math.round(seconds % 60)}s`
-}
-
 function StatusPill(props: { status: SessionActivityStatus }) {
   return (
     <div class="inline-flex items-center gap-1.5 rounded-md border border-border-weaker-base bg-surface-base px-2 py-1">
@@ -51,8 +44,21 @@ function StatusPill(props: { status: SessionActivityStatus }) {
   )
 }
 
+function CountPill(props: { label: string; count: number; status: SessionActivityStatus }) {
+  return (
+    <Show when={props.count > 0}>
+      <div class="inline-flex items-center gap-1.5 rounded-md border border-border-weaker-base bg-background-stronger px-2 py-1">
+        <div class={`size-1.5 rounded-full ${statusClass[props.status]}`} />
+        <div class="text-10-medium text-text-base">{props.label}</div>
+        <div class="text-10-regular text-text-weak">{props.count}</div>
+      </div>
+    </Show>
+  )
+}
+
 function TimelineItem(props: {
   item: SessionActivityItem
+  duration: string
   selected: boolean
   onSelect: () => void
 }) {
@@ -67,8 +73,10 @@ function TimelineItem(props: {
       type="button"
       class="w-full text-left rounded-md border px-3 py-2 transition-colors"
       classList={{
-        "border-border-base bg-surface-base": !props.selected,
-        "border-info-selected bg-surface-info-base/20": props.selected,
+        "border-border-base bg-surface-base": !props.selected && props.item.status !== "error",
+        "border-v2-state-bg-danger/60 bg-v2-state-bg-danger/10": !props.selected && props.item.status === "error",
+        "border-info-selected bg-surface-info-base/20": props.selected && props.item.status !== "error",
+        "border-v2-state-bg-danger bg-v2-state-bg-danger/15": props.selected && props.item.status === "error",
       }}
       onClick={props.onSelect}
     >
@@ -77,7 +85,7 @@ function TimelineItem(props: {
         <div class="min-w-0 flex-1">
           <div class="flex items-center justify-between gap-2">
             <div class="min-w-0 truncate text-12-medium text-text-strong">{props.item.title}</div>
-            <div class="shrink-0 text-10-regular text-text-weaker">{formatDuration(props.item.durationMs)}</div>
+            <div class="shrink-0 text-10-regular text-text-weaker">{props.duration}</div>
           </div>
           <div class="mt-1 flex items-center gap-2">
             <div class="rounded-sm bg-surface-strong px-1.5 py-0.5 text-10-medium text-text-weak">{kind()}</div>
@@ -86,6 +94,50 @@ function TimelineItem(props: {
         </div>
       </div>
     </button>
+  )
+}
+
+function DetailSection(props: { section: SessionActivityDetailSection }) {
+  return (
+    <div>
+      <div class="text-10-medium text-text-weaker">{props.section.label}</div>
+      <Show when={props.section.value}>
+        {(value) => (
+          <div
+            class="mt-1 rounded-md px-3 py-2 text-11-regular"
+            classList={{
+              "bg-background-stronger text-text-base": props.section.tone !== "error",
+              "bg-v2-state-bg-danger/10 text-text-danger-base": props.section.tone === "error",
+            }}
+          >
+            {value()}
+          </div>
+        )}
+      </Show>
+      <Show when={props.section.code}>
+        {(code) => (
+          <pre
+            class="mt-1 max-h-56 overflow-auto whitespace-pre-wrap break-words rounded-md px-3 py-2 font-mono text-11-regular"
+            classList={{
+              "bg-background-stronger text-text-base": props.section.tone !== "error",
+              "bg-v2-state-bg-danger/10 text-text-danger-base": props.section.tone === "error",
+            }}
+          >
+            {code()}
+          </pre>
+        )}
+      </Show>
+    </div>
+  )
+}
+
+function copyError(value: string | undefined) {
+  if (!value) return
+  const clipboard = typeof navigator === "undefined" ? undefined : navigator.clipboard
+  if (!clipboard?.writeText) return
+  void clipboard.writeText(value).then(
+    () => undefined,
+    () => undefined,
   )
 }
 
@@ -100,12 +152,34 @@ function Detail(props: { item: SessionActivityItem | undefined }) {
           <div class="flex flex-col">
             <div class="flex items-center justify-between gap-3 border-b border-border-weaker-base px-3 py-2">
               <div class="min-w-0 truncate text-12-medium text-text-strong">{item().title}</div>
-              <StatusPill status={item().status} />
+              <div class="flex shrink-0 items-center gap-2">
+                <Show when={item().errorText}>
+                  {(errorText) => (
+                    <button
+                      type="button"
+                      class="rounded-md border border-border-weaker-base bg-background-stronger px-2 py-1 text-11-medium text-text-base transition-colors hover:bg-surface-strong"
+                      onClick={() => copyError(errorText())}
+                    >
+                      复制错误
+                    </button>
+                  )}
+                </Show>
+                <StatusPill status={item().status} />
+              </div>
             </div>
             <div class="px-3 py-3">
-              <pre class="max-h-56 overflow-auto whitespace-pre-wrap break-words rounded-md bg-background-stronger px-3 py-2 font-mono text-11-regular text-text-base">
-                {item().detail || item().summary}
-              </pre>
+              <Show
+                when={item().detailSections.length > 0}
+                fallback={
+                  <pre class="max-h-56 overflow-auto whitespace-pre-wrap break-words rounded-md bg-background-stronger px-3 py-2 font-mono text-11-regular text-text-base">
+                    {item().detail || item().summary}
+                  </pre>
+                }
+              >
+                <div class="flex flex-col gap-3">
+                  <For each={item().detailSections}>{(section) => <DetailSection section={section} />}</For>
+                </div>
+              </Show>
             </div>
           </div>
         )}
@@ -119,6 +193,7 @@ export function SessionActivityPanel() {
   const { params } = useSessionLayout()
   const [selected, setSelected] = createSignal<string>()
   const [filter, setFilter] = createSignal<SessionActivityFilter>("all")
+  const [now, setNow] = createSignal(Date.now())
 
   const messages = createMemo(
     () => {
@@ -135,6 +210,11 @@ export function SessionActivityPanel() {
     }),
   )
   const items = createMemo(() => filterSessionActivityItems(activity().items, filter()))
+  const displayDuration = (item: SessionActivityItem) => {
+    if (item.durationMs !== undefined) return formatActivityDuration(item.durationMs)
+    if (item.startedAt !== undefined) return formatActivityDuration(Math.max(0, now() - item.startedAt))
+    return "—"
+  }
   const current = createMemo(() => {
     const id = selected()
     if (id) return items().find((item) => item.id === id)
@@ -144,6 +224,13 @@ export function SessionActivityPanel() {
   createEffect(() => {
     const item = current()
     setSelected(item?.id)
+  })
+
+  createEffect(() => {
+    if (activity().summary.runningCount === 0 && activity().summary.pendingCount === 0) return
+    setNow(Date.now())
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    onCleanup(() => clearInterval(timer))
   })
 
   return (
@@ -174,8 +261,16 @@ export function SessionActivityPanel() {
               </div>
               <div>
                 <div class="text-10-regular text-text-weaker">耗时</div>
-                <div class="mt-1 text-12-medium text-text-strong">{formatDuration(activity().summary.elapsedMs)}</div>
+                <div class="mt-1 text-12-medium text-text-strong">
+                  {formatActivityDuration(activity().summary.elapsedMs)}
+                </div>
               </div>
+            </div>
+            <div class="mt-3 flex flex-wrap gap-2">
+              <CountPill label="运行中" count={activity().summary.runningCount} status="running" />
+              <CountPill label="失败" count={activity().summary.errorCount} status="error" />
+              <CountPill label="已完成" count={activity().summary.completedCount} status="completed" />
+              <CountPill label="等待中" count={activity().summary.pendingCount} status="pending" />
             </div>
           </div>
 
@@ -209,7 +304,12 @@ export function SessionActivityPanel() {
             <div class="flex flex-col gap-2">
               <For each={items()}>
                 {(item) => (
-                  <TimelineItem item={item} selected={selected() === item.id} onSelect={() => setSelected(item.id)} />
+                  <TimelineItem
+                    item={item}
+                    duration={displayDuration(item)}
+                    selected={selected() === item.id}
+                    onSelect={() => setSelected(item.id)}
+                  />
                 )}
               </For>
             </div>

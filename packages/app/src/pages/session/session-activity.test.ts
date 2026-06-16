@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { Message, Part } from "@opencode-ai/sdk/v2/client"
-import { filterSessionActivityItems, getSessionActivity } from "./session-activity"
+import { filterSessionActivityItems, formatActivityDuration, getSessionActivity } from "./session-activity"
 
 const assistant = (id: string) =>
   ({
@@ -301,5 +301,14 @@ describe("getSessionActivity", () => {
     expect(activity.items[0]?.detailSections.some((section) => section.label === "输入" && section.code === "{}")).toBe(
       false,
     )
+  })
+})
+
+describe("formatActivityDuration", () => {
+  test("formats missing, millisecond, second, and minute durations", () => {
+    expect(formatActivityDuration(undefined)).toBe("—")
+    expect(formatActivityDuration(42)).toBe("42ms")
+    expect(formatActivityDuration(1200)).toBe("1.2s")
+    expect(formatActivityDuration(65000)).toBe("1m 5s")
   })
 })
