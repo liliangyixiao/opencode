@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react"
-import type { Message, SSEEvent, PermissionRequest, PermissionResponse } from "../types"
+import type { Message, SSEEvent, PermissionRequest, PermissionResponse, AgentModelSelection } from "../types"
 import { api } from "../services/api"
 import { useConnection } from "./useConnection"
 
@@ -45,12 +45,17 @@ function parsePermission(props: Record<string, unknown>): PermissionRequest | nu
 }
 
 export function useChat(sessionID: string | null, directory?: string) {
-  const { activeConnection, subscribe } = useConnection()
+  const { activeConnection, subscribe, status } = useConnection()
   const [messages, setMessages] = useState<Message[]>([])
   const [sending, setSending] = useState(false)
   const [loading, setLoading] = useState(false)
   const [pendingPermission, setPendingPermission] = useState<PermissionRequest | null>(null)
+  const [selection, setSelection] = useState<AgentModelSelection>({})
+  const [error, setError] = useState<string | null>(null)
+  const [lastFailedContent, setLastFailedContent] = useState<string | null>(null)
   const directoryRef = useRef(directory)
+  const selectionRef = useRef<AgentModelSelection>({})
+  const lastSentContentRef = useRef<string | null>(null)
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const watchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const sessionIDRef = useRef(sessionID)
@@ -59,6 +64,7 @@ export function useChat(sessionID: string | null, directory?: string) {
   const activeConnectionRef = useRef(activeConnection)
   activeConnectionRef.current = activeConnection
   directoryRef.current = directory
+  selectionRef.current = selection
   sessionIDRef.current = sessionID
 
   const loadMessages = useCallback(async () => {
@@ -113,8 +119,10 @@ export function useChat(sessionID: string | null, directory?: string) {
       const conn = activeConnectionRef.current
       if (!conn || !sessionIDRef.current || !content.trim()) return
       setSending(true)
+      setError(null)
+      lastSentContentRef.current = content
       try {
-        await api.sendMessage(conn, sessionIDRef.current, { content }, directoryRef.current)
+        await api.sendMessage(conn, sessionIDRef.current, { content, ...selectionRef.current }, directoryRef.current)
         stopPolling()
         pollingRef.current = setInterval(pollOnce, 3000)
         // Watchdog: if neither SSE nor polling clears sending within 5 min
@@ -124,11 +132,22 @@ export function useChat(sessionID: string | null, directory?: string) {
         pollOnce()
       } catch (err) {
         console.error("Failed to send message:", err)
+        setLastFailedContent(content)
         setSending(false)
       }
     },
     [clearSending, pollOnce, stopPolling],
   )
+
+  // One-tap retry of the last message that failed (either network error on
+  // send, or a session.error from the server). Clears the failed marker so it
+  // can only retry once per failure.
+  const retryLastMessage = useCallback(() => {
+    const content = lastFailedContent
+    if (!content) return
+    setLastFailedContent(null)
+    sendMessage(content)
+  }, [lastFailedContent, sendMessage])
 
   const abort = useCallback(async () => {
     const conn = activeConnectionRef.current
@@ -174,8 +193,23 @@ export function useChat(sessionID: string | null, directory?: string) {
         return
       }
 
+      // Server-side prompt failure (e.g. invalid model, provider auth error).
+      // prompt_async is fire-and-forget, so this is the only signal. Surface
+      // the message and unblock the input so the user can retry.
+      if (event.type === "session.error") {
+        const err = event.properties?.error as { message?: string; name?: string } | undefined
+        setError(err?.message || err?.name || "AI 回复失败，请检查 agent/model 或重试")
+        // Remember the content so the user can one-tap retry.
+        if (lastSentContentRef.current) setLastFailedContent(lastSentContentRef.current)
+        clearSending()
+        return
+      }
+
       if (isTurnEnd(event)) {
         clearSending()
+        // A successful turn clears any prior error banner + retry state.
+        setError(null)
+        setLastFailedContent(null)
         if (pendingReloadRef.current) clearTimeout(pendingReloadRef.current)
         loadMessages()
         return
@@ -197,9 +231,20 @@ export function useChat(sessionID: string | null, directory?: string) {
     if (!sessionID) return
     setMessages([])
     setPendingPermission(null)
+    setError(null)
     setLoading(true)
     loadMessages().finally(() => setLoading(false))
   }, [sessionID, loadMessages])
+
+  // Reset sending state when the connection drops. Otherwise a user who hits
+  // "disconnect" while AI is replying is left with a permanently locked input.
+  useEffect(() => {
+    if (status === "disconnected") {
+      clearSending()
+      setPendingPermission(null)
+      setError(null)
+    }
+  }, [status, clearSending])
 
   // Cleanup timers on unmount
   useEffect(() => {
@@ -214,6 +259,12 @@ export function useChat(sessionID: string | null, directory?: string) {
     sending,
     loading,
     pendingPermission,
+    error,
+    clearError: () => setError(null),
+    lastFailedContent,
+    retryLastMessage,
+    selection,
+    setSelection,
     sendMessage,
     abort,
     replyPermission,

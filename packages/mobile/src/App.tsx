@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react"
+import { useState, useEffect } from "react"
 import { StatusBar } from "expo-status-bar"
 import { StyleSheet, View, BackHandler } from "react-native"
 import { SafeAreaProvider } from "react-native-safe-area-context"
@@ -6,29 +6,41 @@ import { ConnectionProvider, useConnection } from "./hooks/useConnection"
 import { ConnectScreen } from "./screens/ConnectScreen"
 import { ProjectScreen } from "./screens/ProjectScreen"
 import { ChatScreen } from "./screens/ChatScreen"
+import { FileBrowserScreen } from "./screens/FileBrowserScreen"
+import { VcsScreen } from "./screens/VcsScreen"
 
-type Screen = "connect" | "projects" | "chat"
+type Screen = "connect" | "projects" | "chat" | "files" | "vcs"
 
 function AppContent() {
   const { status, switchWorkspace } = useConnection()
   const [screen, setScreen] = useState<Screen>(status === "connected" ? "projects" : "connect")
   const [chatSessionID, setChatSessionID] = useState<string>("")
   const [chatDirectory, setChatDirectory] = useState<string>("")
+  const [chatTitle, setChatTitle] = useState<string>("")
   const [selectedDirectory, setSelectedDirectory] = useState<string | null>(null)
+  const [fileDirectory, setFileDirectory] = useState<string>("")
+  const [vcsDirectory, setVcsDirectory] = useState<string>("")
 
   const handleSelectProject = (directory: string, _name: string) => {
     setSelectedDirectory(directory)
-    // The server's /event stream is per-workspace, so selecting a different
-    // project requires rescoping the SSE connection.
     switchWorkspace(directory)
   }
-  const handleSelectSession = (sessionID: string, directory: string) => {
+  const handleSelectSession = (sessionID: string, directory: string, title?: string) => {
     setChatSessionID(sessionID)
     setChatDirectory(directory)
+    setChatTitle(title || "对话")
     setScreen("chat")
   }
   const handleBack = () => {
     setScreen("projects")
+  }
+  const handleOpenFiles = (directory: string) => {
+    setFileDirectory(directory)
+    setScreen("files")
+  }
+  const handleOpenVcs = (directory: string) => {
+    setVcsDirectory(directory)
+    setScreen("vcs")
   }
 
   // Connection status drives the top-level screen. Side effects must not run
@@ -45,7 +57,7 @@ function AppContent() {
   // in-app navigation state to go back to; otherwise let the OS handle it.
   useEffect(() => {
     const onBack = (): boolean => {
-      if (screen === "chat") {
+      if (screen === "chat" || screen === "files" || screen === "vcs") {
         setScreen("projects")
         return true
       }
@@ -68,11 +80,19 @@ function AppContent() {
         <ProjectScreen
           onSelectProject={handleSelectProject}
           onSelectSession={handleSelectSession}
+          onOpenFiles={handleOpenFiles}
+          onOpenVcs={handleOpenVcs}
           selectedDirectory={selectedDirectory}
         />
       )}
       {screen === "chat" && chatSessionID && (
-        <ChatScreen sessionID={chatSessionID} directory={chatDirectory} onBack={handleBack} />
+        <ChatScreen sessionID={chatSessionID} directory={chatDirectory} title={chatTitle} onBack={handleBack} />
+      )}
+      {screen === "files" && fileDirectory && (
+        <FileBrowserScreen directory={fileDirectory} onBack={handleBack} />
+      )}
+      {screen === "vcs" && vcsDirectory && (
+        <VcsScreen directory={vcsDirectory} onBack={handleBack} />
       )}
     </View>
   )

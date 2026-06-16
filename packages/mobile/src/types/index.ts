@@ -22,6 +22,8 @@ export interface SessionInfo {
   directory?: string
   title?: string
   version?: string
+  agent?: string
+  model?: { id: string; providerID: string; variant?: string }
   cost?: number
   tokens?: { input?: number; output?: number; reasoning?: number; cache?: { read?: number; write?: number } }
   time: { created: number; updated: number }
@@ -39,6 +41,66 @@ export interface PermissionRequest {
 
 // Reply values for POST /session/:id/permissions/:id body `{ response }`.
 export type PermissionResponse = "once" | "always" | "reject"
+
+// Agent info from GET /agent. Only the fields we surface in the picker.
+export interface AgentInfo {
+  name: string
+  description?: string
+  mode?: "subagent" | "primary" | "all"
+  native?: boolean
+  hidden?: boolean
+}
+
+// A selectable model option, flattened from GET /provider's all[].models map.
+export interface ModelOption {
+  providerID: string
+  modelID: string
+  name: string
+  family?: string
+  isDefault?: boolean
+}
+
+// Currently selected agent/model in a session. `agent` is the agent name;
+// model is identified by providerID+modelID. Both optional (server default).
+export interface AgentModelSelection {
+  agent?: string
+  model?: { providerID: string; modelID: string }
+}
+
+// A file or directory entry from GET /file.
+export interface FileEntry {
+  name: string
+  path: string
+  type: "file" | "directory"
+  ignored: boolean
+}
+
+// File content from GET /file/content.
+export interface FileContent {
+  type: "text" | "binary"
+  content: string
+}
+
+// A flattened search match from GET /find.
+export interface SearchMatch {
+  path: string
+  line: number
+  text: string
+}
+
+// Git change summary from GET /vcs/status.
+export interface VcsFileStatus {
+  file: string
+  additions: number
+  deletions: number
+  status: "added" | "deleted" | "modified"
+}
+
+// Branch info from GET /vcs.
+export interface VcsInfo {
+  branch?: string
+  default_branch?: string
+}
 
 export type ToolPartStatus = "pending" | "running" | "completed" | "error"
 
@@ -65,11 +127,8 @@ export interface Message {
 
 export interface PromptPayload {
   content: string
-  attachments?: Array<{
-    type: string
-    data: string
-    name?: string
-  }>
+  agent?: string
+  model?: { providerID: string; modelID: string }
 }
 
 export interface ServerHealth {
