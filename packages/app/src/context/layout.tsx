@@ -25,6 +25,7 @@ const AVATAR_COLOR_KEYS = ["pink", "mint", "orange", "purple", "cyan", "lime"] a
 const DEFAULT_SIDEBAR_WIDTH = 344
 const DEFAULT_FILE_TREE_WIDTH = 200
 const DEFAULT_SESSION_WIDTH = 600
+const DEFAULT_ACTIVITY_PANEL_WIDTH = 420
 const DEFAULT_TERMINAL_HEIGHT = 280
 export type AvatarColorKey = (typeof AVATAR_COLOR_KEYS)[number]
 
@@ -62,6 +63,7 @@ type SessionView = {
   pendingMessage?: string
   pendingMessageAt?: number
   todoCollapsed?: boolean
+  activityOpened?: boolean
 }
 
 type TabHandoff = {
@@ -84,6 +86,7 @@ export type LayoutRoute =
 function nextSessionTabsForOpen(current: SessionTabs | undefined, tab: string): SessionTabs {
   const all = current?.all ?? []
   if (tab === "review") return { all: all.filter((x) => x !== "review"), active: tab }
+  if (tab === "activity") return { all: all.filter((x) => x !== "activity"), active: tab }
   if (tab === "context") return { all: [tab, ...all.filter((x) => x !== tab)], active: tab }
   if (!all.includes(tab)) return { all: [...all, tab], active: tab }
   return { all, active: tab }
@@ -271,6 +274,9 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         },
         session: {
           width: DEFAULT_SESSION_WIDTH,
+        },
+        activityPanel: {
+          width: DEFAULT_ACTIVITY_PANEL_WIDTH,
         },
         mobileSidebar: {
           opened: false,
@@ -692,6 +698,16 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
           setStore("session", "width", width)
         },
       },
+      activityPanel: {
+        width: createMemo(() => store.activityPanel?.width ?? DEFAULT_ACTIVITY_PANEL_WIDTH),
+        resize(width: number) {
+          if (!store.activityPanel) {
+            setStore("activityPanel", { width })
+            return
+          }
+          setStore("activityPanel", "width", width)
+        },
+      },
       mobileSidebar: {
         opened: createMemo(() => store.mobileSidebar?.opened ?? false),
         show() {
@@ -820,6 +836,36 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
               setReviewPanelOpened(!reviewPanelOpened())
             },
           },
+          activityPanel: {
+            opened: createMemo(() => s().activityOpened ?? true),
+            open() {
+              const session = key()
+              const current = store.sessionView[session]
+              if (!current) {
+                setStore("sessionView", session, { scroll: {}, activityOpened: true })
+                return
+              }
+              setStore("sessionView", session, "activityOpened", true)
+            },
+            close() {
+              const session = key()
+              const current = store.sessionView[session]
+              if (!current) {
+                setStore("sessionView", session, { scroll: {}, activityOpened: false })
+                return
+              }
+              setStore("sessionView", session, "activityOpened", false)
+            },
+            toggle() {
+              const session = key()
+              const current = store.sessionView[session]
+              if (!current) {
+                setStore("sessionView", session, { scroll: {}, activityOpened: false })
+                return
+              }
+              setStore("sessionView", session, "activityOpened", !(current.activityOpened ?? true))
+            },
+          },
           review: {
             open: createMemo(() => s().reviewOpen ?? []),
             setOpen(open: string[]) {
@@ -895,7 +941,7 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         return {
           tabs,
           active: createMemo(() => tabs().active),
-          all: createMemo(() => tabs().all.filter((tab) => tab !== "review")),
+          all: createMemo(() => tabs().all.filter((tab) => tab !== "activity" && tab !== "review")),
           setActive(tab: string | undefined) {
             const session = key()
             const next = tab ? normalize(tab) : tab
@@ -907,7 +953,7 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
           },
           setAll(all: string[]) {
             const session = key()
-            const next = normalizeAll(all).filter((tab) => tab !== "review")
+            const next = normalizeAll(all).filter((tab) => tab !== "activity" && tab !== "review")
             if (!store.sessionTabs[session]) {
               setStore("sessionTabs", session, { all: next, active: undefined })
             } else {
@@ -924,7 +970,7 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
             const current = store.sessionTabs[session]
             if (!current) return
 
-            if (tab === "review") {
+            if (tab === "activity" || tab === "review") {
               if (current.active !== tab) return
               setStore("sessionTabs", session, "active", current.all[0])
               return

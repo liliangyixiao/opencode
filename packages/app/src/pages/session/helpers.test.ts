@@ -5,8 +5,10 @@ import {
   createOpenReviewFile,
   createOpenSessionFileTab,
   createSessionTabs,
+  activityPanelTotalWidth,
   focusTerminalById,
   getTabReorderIndex,
+  sessionPanelWidth,
   shouldFocusTerminalOnKeyDown,
   shouldShowFileTree,
 } from "./helpers"
@@ -125,6 +127,28 @@ describe("getTabReorderIndex", () => {
   })
 })
 
+describe("session panel sizing", () => {
+  test("reserves activity width when file tree is hidden", () => {
+    expect(
+      sessionPanelWidth({
+        sidePanelOpen: true,
+        reviewOpen: false,
+        activityOpen: true,
+        fileOpen: false,
+        sessionWidth: 600,
+        fileWidth: 200,
+        activityWidth: 420,
+      }),
+    ).toBe("calc(100% - 420px)")
+  })
+
+  test("combines activity and file tree widths when both are visible", () => {
+    expect(activityPanelTotalWidth({ activityOpen: true, fileOpen: true, fileWidth: 240, activityWidth: 420 })).toBe(
+      660,
+    )
+  })
+})
+
 describe("createSessionTabs", () => {
   test("normalizes the effective file tab", () => {
     createRoot((dispose) => {
@@ -181,6 +205,28 @@ describe("createSessionTabs", () => {
       })
 
       expect(result.activeTab()).toBe("review")
+      expect(result.activeFileTab()).toBeUndefined()
+      expect(result.closableTab()).toBeUndefined()
+      dispose()
+    })
+  })
+
+  test("uses activity as a panel tab without adding it to file tabs", () => {
+    createRoot((dispose) => {
+      const [state] = createStore({
+        active: "activity" as string | undefined,
+        all: ["activity", "file://src/a.ts"],
+      })
+      const tabs = createMemo(() => ({ active: () => state.active, all: () => state.all }))
+      const result = createSessionTabs({
+        tabs,
+        pathFromTab: (tab) => (tab.startsWith("file://") ? tab.slice("file://".length) : undefined),
+        normalizeTab: (tab) => (tab.startsWith("file://") ? `norm:${tab.slice("file://".length)}` : tab),
+        activity: () => true,
+      })
+
+      expect(result.activeTab()).toBe("activity")
+      expect(result.openedTabs()).toEqual(["norm:src/a.ts"])
       expect(result.activeFileTab()).toBeUndefined()
       expect(result.closableTab()).toBeUndefined()
       dispose()

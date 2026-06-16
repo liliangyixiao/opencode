@@ -140,7 +140,7 @@ export function SessionHeader() {
   const settings = useSettings()
   const sync = useSync()
   const terminal = useTerminal()
-  const { params, view } = useSessionLayout()
+  const { params, tabs, view } = useSessionLayout()
 
   const projectDirectory = createMemo(() => decode64(params.dir) ?? "")
   const project = createMemo(() => {
@@ -231,9 +231,21 @@ export function SessionHeader() {
   const tint = createMemo(() =>
     messageAgentColor(params.id ? sync().data.message[params.id] : undefined, sync().data.agent),
   )
+  const toggleActivity = () => {
+    if (view().activityPanel.opened()) {
+      view().activityPanel.close()
+      return
+    }
+    view().activityPanel.open()
+    tabs().setActive("activity")
+  }
   const v2ActionsState = createMemo<SessionHeaderV2ActionsState>(() => ({
     statusVisible: status(),
     statusLabel: language.t("status.popover.trigger"),
+    activityVisible: !!params.id,
+    activityLabel: "切换执行观察",
+    activityOpened: view().activityPanel.opened(),
+    onActivityToggle: toggleActivity,
     reviewLabel: language.t("command.review.toggle"),
     reviewKeybind: command.keybind("review.toggle"),
     reviewOpened: view().reviewPanel.opened(),
@@ -516,6 +528,10 @@ export function SessionHeader() {
 type SessionHeaderV2ActionsState = {
   statusVisible: boolean
   statusLabel: string
+  activityVisible: boolean
+  activityLabel: string
+  activityOpened: boolean
+  onActivityToggle: () => void
   reviewLabel: string
   reviewKeybind: string
   reviewOpened: boolean
@@ -528,6 +544,22 @@ function SessionHeaderV2Actions(props: { state: SessionHeaderV2ActionsState }) {
       <Show when={props.state.statusVisible}>
         <Tooltip placement="bottom" value={props.state.statusLabel}>
           <StatusPopoverV2 />
+        </Tooltip>
+      </Show>
+      <Show when={props.state.activityVisible}>
+        <Tooltip placement="bottom" value={props.state.activityLabel}>
+          <IconButtonV2
+            type="button"
+            variant="ghost-muted"
+            size="large"
+            class="!w-9 shrink-0"
+            state={props.state.activityOpened ? "pressed" : undefined}
+            onClick={props.state.onActivityToggle}
+            aria-label={props.state.activityLabel}
+            aria-expanded={props.state.activityOpened}
+            aria-controls="review-panel"
+            icon={<IconV2 name={props.state.activityOpened ? "status-active" : "status"} />}
+          />
         </Tooltip>
       </Show>
       <TooltipKeybind title={props.state.reviewLabel} keybind={props.state.reviewKeybind}>

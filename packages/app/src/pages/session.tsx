@@ -51,6 +51,7 @@ import {
   createSessionTabs,
   createSizing,
   focusTerminalById,
+  sessionPanelWidth,
   shouldFocusTerminalOnKeyDown,
   shouldShowFileTree,
 } from "@/pages/session/helpers"
@@ -271,6 +272,9 @@ export default function Page() {
   const isDesktop = createMediaQuery("(min-width: 768px)")
   const size = createSizing()
   const desktopReviewOpen = createMemo(() => isDesktop() && view().reviewPanel.opened())
+  const desktopActivityOpen = createMemo(
+    () => isDesktop() && settings.general.newLayoutDesigns() && !!params.id && view().activityPanel.opened(),
+  )
   const desktopFileTreeOpen = createMemo(
     () =>
       isDesktop() &&
@@ -279,12 +283,18 @@ export default function Page() {
         opened: layout.fileTree.opened(),
       }),
   )
-  const desktopSidePanelOpen = createMemo(() => desktopReviewOpen() || desktopFileTreeOpen())
-  const sessionPanelWidth = createMemo(() => {
-    if (!desktopSidePanelOpen()) return "100%"
-    if (desktopReviewOpen()) return `${layout.session.width()}px`
-    return `calc(100% - ${layout.fileTree.width()}px)`
-  })
+  const desktopSidePanelOpen = createMemo(() => desktopReviewOpen() || desktopActivityOpen() || desktopFileTreeOpen())
+  const mainPanelWidth = createMemo(() =>
+    sessionPanelWidth({
+      sidePanelOpen: desktopSidePanelOpen(),
+      reviewOpen: desktopReviewOpen(),
+      activityOpen: desktopActivityOpen(),
+      fileOpen: desktopFileTreeOpen(),
+      sessionWidth: layout.session.width(),
+      fileWidth: layout.fileTree.width(),
+      activityWidth: layout.activityPanel.width(),
+    }),
+  )
   const centered = createMemo(() => isDesktop() && !desktopReviewOpen())
 
   function normalizeTab(tab: string) {
@@ -1764,7 +1774,7 @@ export default function Page() {
               !size.active() && !ui.reviewSnap,
           }}
           style={{
-            width: sessionPanelWidth(),
+            width: mainPanelWidth(),
           }}
         >
           <div

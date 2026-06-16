@@ -15,6 +15,7 @@ type TabsInput = {
   pathFromTab: (tab: string) => string | undefined
   normalizeTab: (tab: string) => string
   review?: Accessor<boolean>
+  activity?: Accessor<boolean>
   hasReview?: Accessor<boolean>
 }
 
@@ -26,6 +27,7 @@ export function shouldShowFileTree(input: { visible: boolean; opened: boolean })
 
 export const createSessionTabs = (input: TabsInput) => {
   const review = input.review ?? (() => false)
+  const activity = input.activity ?? (() => false)
   const hasReview = input.hasReview ?? (() => false)
   const contextOpen = createMemo(() => input.tabs().active() === "context" || input.tabs().all().includes("context"))
   const openedTabs = createMemo(
@@ -35,7 +37,7 @@ export const createSessionTabs = (input: TabsInput) => {
         .tabs()
         .all()
         .flatMap((tab) => {
-          if (tab === "context" || tab === "review") return []
+          if (tab === "activity" || tab === "context" || tab === "review") return []
           const value = input.pathFromTab(tab) ? input.normalizeTab(tab) : tab
           if (seen.has(value)) return []
           seen.add(value)
@@ -47,6 +49,7 @@ export const createSessionTabs = (input: TabsInput) => {
   )
   const activeTab = createMemo(() => {
     const active = input.tabs().active()
+    if (active === "activity" && activity()) return active
     if (active === "context") return active
     if (active === "review" && review()) return active
     if (active && input.pathFromTab(active)) return input.normalizeTab(active)
@@ -55,6 +58,7 @@ export const createSessionTabs = (input: TabsInput) => {
     if (first) return first
     if (contextOpen()) return "context"
     if (review() && hasReview()) return "review"
+    if (activity()) return "activity"
     return "empty"
   })
   const activeFileTab = createMemo(() => {
@@ -153,6 +157,33 @@ export const getTabReorderIndex = (tabs: readonly string[], from: string, to: st
   const toIndex = tabs.indexOf(to)
   if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) return undefined
   return toIndex
+}
+
+export const activityPanelTotalWidth = (input: {
+  activityOpen: boolean
+  fileOpen: boolean
+  fileWidth: number
+  activityWidth: number
+}) => {
+  if (!input.activityOpen) return undefined
+  if (input.fileOpen) return input.fileWidth + input.activityWidth
+  return input.activityWidth
+}
+
+export const sessionPanelWidth = (input: {
+  sidePanelOpen: boolean
+  reviewOpen: boolean
+  activityOpen: boolean
+  fileOpen: boolean
+  sessionWidth: number
+  fileWidth: number
+  activityWidth: number
+}) => {
+  if (!input.sidePanelOpen) return "100%"
+  if (input.reviewOpen) return `${input.sessionWidth}px`
+  const activityWidth = activityPanelTotalWidth(input)
+  if (activityWidth !== undefined) return `calc(100% - ${activityWidth}px)`
+  return `calc(100% - ${input.fileWidth}px)`
 }
 
 export const createSizing = () => {

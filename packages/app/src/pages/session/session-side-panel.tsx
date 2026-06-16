@@ -31,6 +31,7 @@ import {
   type Sizing,
 } from "@/pages/session/helpers"
 import { setSessionHandoff } from "@/pages/session/handoff"
+import { SessionActivityPanel } from "@/pages/session/session-activity-panel"
 import { useSessionLayout } from "@/pages/session/session-layout"
 
 type RenderDiff = (SnapshotFileDiff & { file: string }) | VcsFileDiff
@@ -65,6 +66,9 @@ export function SessionSidePanel(props: {
   const shown = settings.visibility.fileTree
 
   const reviewOpen = createMemo(() => isDesktop() && view().reviewPanel.opened())
+  const activityOpen = createMemo(
+    () => isDesktop() && settings.general.newLayoutDesigns() && !!params.id && view().activityPanel.opened(),
+  )
   const fileOpen = createMemo(
     () =>
       isDesktop() &&
@@ -73,10 +77,22 @@ export function SessionSidePanel(props: {
         opened: layout.fileTree.opened(),
       }),
   )
-  const open = createMemo(() => reviewOpen() || fileOpen())
+  const workOpen = createMemo(() => reviewOpen() || activityOpen())
+  const open = createMemo(() => workOpen() || fileOpen())
   const reviewTab = createMemo(() => isDesktop())
+  const hasFileTabs = createMemo(() => tabs().all().some((tab) => !!file.pathFromTab(tab)))
+  const hasContextTab = createMemo(() => tabs().active() === "context" || tabs().all().includes("context"))
+  const activityFocused = createMemo(
+    () =>
+      activityOpen() &&
+      (tabs().active() === "activity" ||
+        (!hasFileTabs() && !hasContextTab() && !(reviewTab() && props.canReview()))),
+  )
+  const activitySized = createMemo(() => activityOpen() && !reviewOpen())
   const panelWidth = createMemo(() => {
     if (!open()) return "0px"
+    if (activitySized() && fileOpen()) return `${layout.fileTree.width() + layout.activityPanel.width()}px`
+    if (activitySized()) return `${layout.activityPanel.width()}px`
     if (reviewOpen()) return "auto"
     return `${layout.fileTree.width()}px`
   })
@@ -148,6 +164,7 @@ export function SessionSidePanel(props: {
     pathFromTab: file.pathFromTab,
     normalizeTab,
     review: reviewTab,
+    activity: activityOpen,
     hasReview: props.canReview,
   })
   const contextOpen = tabState.contextOpen
@@ -225,7 +242,7 @@ export function SessionSidePanel(props: {
           "transition-[width] duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[width] motion-reduce:transition-none":
             !props.size.active() && !props.reviewSnap,
           "rounded-[10px] shadow-[var(--v2-elevation-raised)] overflow-hidden": settings.general.newLayoutDesigns(),
-          "flex-1": reviewOpen(),
+          "flex-1": reviewOpen() && !activityFocused(),
         }}
         style={{ width: panelWidth() }}
       >
@@ -237,12 +254,14 @@ export function SessionSidePanel(props: {
             }}
           >
             <div
-              aria-hidden={!reviewOpen()}
-              inert={!reviewOpen()}
-              class="relative min-w-0 h-full flex-1 overflow-hidden bg-background-base"
+              aria-hidden={!workOpen()}
+              inert={!workOpen()}
+              class="relative min-w-0 h-full overflow-hidden bg-background-base"
               classList={{
-                "pointer-events-none": !reviewOpen(),
+                "flex-1": !activitySized(),
+                "pointer-events-none": !workOpen(),
               }}
+              style={{ width: activitySized() ? `${layout.activityPanel.width()}px` : undefined }}
             >
               <div class="size-full min-w-0 h-full bg-background-base">
                 <DragDropProvider
@@ -268,6 +287,14 @@ export function SessionSidePanel(props: {
                               <Show when={props.hasReview()}>
                                 <div>{props.reviewCount()}</div>
                               </Show>
+                            </div>
+                          </Tabs.Trigger>
+                        </Show>
+                        <Show when={activityOpen()}>
+                          <Tabs.Trigger value="activity">
+                            <div class="flex items-center gap-1.5">
+                              <div class="size-1.5 rounded-full bg-surface-info-strong" />
+                              <div>执行观察</div>
                             </div>
                           </Tabs.Trigger>
                         </Show>
@@ -331,6 +358,14 @@ export function SessionSidePanel(props: {
                       </Tabs.Content>
                     </Show>
 
+                    <Show when={activityOpen()}>
+                      <Tabs.Content value="activity" class="flex flex-col h-full overflow-hidden contain-strict">
+                        <Show when={activeTab() === "activity"}>
+                          <SessionActivityPanel />
+                        </Show>
+                      </Tabs.Content>
+                    </Show>
+
                     <Tabs.Content value="empty" class="flex flex-col h-full overflow-hidden contain-strict">
                       <Show when={activeTab() === "empty"}>
                         <div class="relative pt-2 flex-1 min-h-0 overflow-hidden">
@@ -372,6 +407,21 @@ export function SessionSidePanel(props: {
                   </DragOverlay>
                 </DragDropProvider>
               </div>
+              <Show when={activitySized()}>
+                <div onPointerDown={() => props.size.start()}>
+                  <ResizeHandle
+                    direction="horizontal"
+                    edge="start"
+                    size={layout.activityPanel.width()}
+                    min={320}
+                    max={typeof window === "undefined" ? 640 : Math.min(720, window.innerWidth * 0.55)}
+                    onResize={(width) => {
+                      props.size.touch()
+                      layout.activityPanel.resize(width)
+                    }}
+                  />
+                </div>
+              </Show>
             </div>
 
             <Show when={shown()}>
@@ -389,7 +439,7 @@ export function SessionSidePanel(props: {
               >
                 <div
                   class="h-full flex flex-col overflow-hidden group/filetree"
-                  classList={{ "border-l border-border-weaker-base": reviewOpen() }}
+                  classList={{ "border-l border-border-weaker-base": workOpen() }}
                 >
                   <Tabs
                     variant="pill"
