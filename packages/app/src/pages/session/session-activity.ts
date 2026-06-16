@@ -200,7 +200,7 @@ function optionalSection(section: SessionActivityDetailSection) {
 }
 
 function statusOutput(part: ToolPart) {
-  if (part.state.status === "pending") return part.state.raw
+  if (part.state.status === "pending") return undefined
   if (part.state.status === "running") return undefined
   if (part.state.status === "error") return part.state.error
   return part.state.output
@@ -218,10 +218,13 @@ function toolTimes(part: ToolPart) {
 }
 
 function jsonSection(input: unknown) {
-  return {
-    label: "输入",
-    code: JSON.stringify(input, null, 2),
-  }
+  if (!input || typeof input !== "object" || Object.keys(input).length === 0) return []
+  return [
+    {
+      label: "输入",
+      code: JSON.stringify(input, null, 2),
+    },
+  ]
 }
 
 function outputSection(part: ToolPart) {
@@ -299,7 +302,7 @@ function toolDetailSections(part: ToolPart, detail: string): SessionActivityDeta
     ]
   }
 
-  return [jsonSection(input), ...outputSection(part)]
+  return [...jsonSection(input), ...outputSection(part)]
 }
 
 function readRange(input: unknown) {

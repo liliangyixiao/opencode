@@ -256,4 +256,50 @@ describe("getSessionActivity", () => {
     expect(activity.items[0]?.endedAt).toBe(45)
     expect(activity.items[0]?.durationMs).toBe(15)
   })
+
+  test("does not label pending raw text as output", () => {
+    const messages = [assistant("a1")]
+    const parts = {
+      a1: [
+        {
+          id: "pending1",
+          type: "tool",
+          tool: "bash",
+          state: {
+            status: "pending",
+            input: { command: "bun test" },
+            raw: "waiting for approval",
+          },
+        },
+      ] as unknown as Part[],
+    }
+
+    const activity = getSessionActivity({ messages, parts })
+
+    expect(activity.items[0]?.detailSections.map((section) => section.label)).not.toContain("输出")
+  })
+
+  test("omits empty input section for unknown tools", () => {
+    const messages = [assistant("a1")]
+    const parts = {
+      a1: [
+        {
+          id: "unknown1",
+          type: "tool",
+          tool: "unknown_tool",
+          state: {
+            status: "running",
+            input: {},
+            time: { start: 10 },
+          },
+        },
+      ] as unknown as Part[],
+    }
+
+    const activity = getSessionActivity({ messages, parts })
+
+    expect(activity.items[0]?.detailSections.some((section) => section.label === "输入" && section.code === "{}")).toBe(
+      false,
+    )
+  })
 })
