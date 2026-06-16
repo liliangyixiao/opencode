@@ -72,6 +72,7 @@ import { ImagePreview } from "@opencode-ai/ui/image-preview"
 import { pathKey } from "@/utils/path-key"
 import { displayName } from "@/pages/layout/helpers"
 import { authTokenFromCredentials } from "@/utils/server"
+import { useServer } from "@/context/server"
 
 export type PromptInputState = ReturnType<typeof usePrompt>
 
@@ -207,6 +208,7 @@ const EXAMPLES = [
 
 export const PromptInput: Component<PromptInputProps> = (props) => {
   const sdk = useSDK()
+  const server = useServer()
 
   const sync = useSync()
   const files = useFile()
@@ -1219,7 +1221,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     const text = currentPrompt.map((part) => ("content" in part ? part.content : "")).join("")
     if (!text.trim()) return
 
-    const currentModel = local.model.current()
+    const currentModel = props.controls.model.selection.current()
     const conn = server.current
     if (!conn) return
 
