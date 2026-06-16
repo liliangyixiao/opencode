@@ -1,4 +1,5 @@
 import { AppIcon } from "@opencode-ai/ui/app-icon"
+import type { Message, Part } from "@opencode-ai/sdk/v2/client"
 import { Button } from "@opencode-ai/ui/button"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { Icon } from "@opencode-ai/ui/icon"
@@ -20,6 +21,7 @@ import { useSettings } from "@/context/settings"
 import { useSync } from "@/context/sync"
 import { useTerminal } from "@/context/terminal"
 import { focusTerminalById } from "@/pages/session/helpers"
+import { getSessionActivity } from "@/pages/session/session-activity"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { messageAgentColor } from "@/utils/agent"
 import { decode64 } from "@/utils/base64"
@@ -231,6 +233,29 @@ export function SessionHeader() {
   const tint = createMemo(() =>
     messageAgentColor(params.id ? sync().data.message[params.id] : undefined, sync().data.agent),
   )
+  const activity = createMemo(() =>
+    getSessionActivity({
+      messages: params.id ? ((sync().data.message[params.id] ?? []) as Message[]) : [],
+      parts: sync().data.part as Record<string, Part[] | undefined>,
+    }),
+  )
+  const activityLabel = createMemo(() => {
+    const summary = activity().summary
+    const labels = [
+      summary.runningCount ? `${summary.runningCount} 个运行中` : undefined,
+      summary.errorCount ? `${summary.errorCount} 个失败` : undefined,
+    ].filter((label): label is string => !!label)
+
+    if (labels.length === 0) return "切换执行观察"
+    return `执行观察：${labels.join("，")}`
+  })
+  const activityState = createMemo<SessionHeaderV2ActionsState["activityState"]>(() => {
+    const summary = activity().summary
+    if (summary.errorCount > 0) return "error"
+    if (summary.runningCount > 0 || summary.pendingCount > 0) return "running"
+    if (view().activityPanel.opened()) return "opened"
+    return "idle"
+  })
   const toggleActivity = () => {
     if (view().activityPanel.opened()) {
       view().activityPanel.close()
@@ -243,8 +268,9 @@ export function SessionHeader() {
     statusVisible: status(),
     statusLabel: language.t("status.popover.trigger"),
     activityVisible: !!params.id,
-    activityLabel: "切换执行观察",
+    activityLabel: activityLabel(),
     activityOpened: view().activityPanel.opened(),
+    activityState: activityState(),
     onActivityToggle: toggleActivity,
     reviewLabel: language.t("command.review.toggle"),
     reviewKeybind: command.keybind("review.toggle"),
@@ -531,6 +557,7 @@ type SessionHeaderV2ActionsState = {
   activityVisible: boolean
   activityLabel: string
   activityOpened: boolean
+  activityState: "idle" | "opened" | "running" | "error"
   onActivityToggle: () => void
   reviewLabel: string
   reviewKeybind: string
@@ -553,12 +580,21 @@ function SessionHeaderV2Actions(props: { state: SessionHeaderV2ActionsState }) {
             variant="ghost-muted"
             size="large"
             class="!w-9 shrink-0"
-            state={props.state.activityOpened ? "pressed" : undefined}
+            state={props.state.activityState === "idle" ? undefined : "pressed"}
             onClick={props.state.onActivityToggle}
             aria-label={props.state.activityLabel}
             aria-expanded={props.state.activityOpened}
             aria-controls="review-panel"
-            icon={<IconV2 name={props.state.activityOpened ? "status-active" : "status"} />}
+            icon={
+              <IconV2
+                name={
+                  props.state.activityState === "error" || props.state.activityState === "running"
+                    ? "status-active"
+                    : "status"
+                }
+                class={props.state.activityState === "error" ? "text-text-danger-base" : undefined}
+              />
+            }
           />
         </Tooltip>
       </Show>
