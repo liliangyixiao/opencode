@@ -15,7 +15,7 @@ import type { ServerReadyData } from "../preload/types"
 import { checkAppExists, resolveAppPath } from "./apps"
 import { CHANNEL } from "./constants"
 import { registerIpcHandlers, sendDeepLinks, sendMenuCommand } from "./ipc"
-import { createWindowBeforeLoadingSettles, forwardInitializationFailure } from "./initialization"
+import { forwardInitializationFailure } from "./initialization"
 import { exportDebugLogs, initCrashReporter, initLogging, startNetLog, write as writeLog } from "./logging"
 import { parseMarkdown } from "./markdown"
 import { createMenu } from "./menu"
@@ -331,23 +331,23 @@ const main = Effect.gen(function* () {
     logger.log("loading task finished")
   }).pipe(forwardInitializationFailure(serverReady), Effect.forkChild)
 
-  yield* createWindowBeforeLoadingSettles(loadingTask, () => {
-    mainWindow = createMainWindow()
-    if (mainWindow) {
-      createMenu({
-        trigger: (id) => {
-          const win = BrowserWindow.getFocusedWindow() ?? mainWindow
-          if (win) sendMenuCommand(win, id)
-        },
-        checkForUpdates: () => {
-          void showUpdaterDialog(updater, true)
-        },
-        relaunch: () => {
-          relaunch()
-        },
-      })
-    }
-  })
+  yield* Fiber.await(loadingTask)
+
+  mainWindow = createMainWindow()
+  if (mainWindow) {
+    createMenu({
+      trigger: (id) => {
+        const win = BrowserWindow.getFocusedWindow() ?? mainWindow
+        if (win) sendMenuCommand(win, id)
+      },
+      checkForUpdates: () => {
+        void showUpdaterDialog(updater, true)
+      },
+      relaunch: () => {
+        relaunch()
+      },
+    })
+  }
 })
 
 Effect.runFork(main)
