@@ -21,7 +21,7 @@ import { useSettings } from "@/context/settings"
 import { useSync } from "@/context/sync"
 import { useTerminal } from "@/context/terminal"
 import { focusTerminalById } from "@/pages/session/helpers"
-import { getSessionActivity } from "@/pages/session/session-activity"
+import { getSessionActivitySummary } from "@/pages/session/session-activity"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { messageAgentColor } from "@/utils/agent"
 import { decode64 } from "@/utils/base64"
@@ -233,14 +233,14 @@ export function SessionHeader() {
   const tint = createMemo(() =>
     messageAgentColor(params.id ? sync().data.message[params.id] : undefined, sync().data.agent),
   )
-  const activity = createMemo(() =>
-    getSessionActivity({
+  const activitySummary = createMemo(() =>
+    getSessionActivitySummary({
       messages: params.id ? ((sync().data.message[params.id] ?? []) as Message[]) : [],
       parts: sync().data.part as Record<string, Part[] | undefined>,
     }),
   )
   const activityLabel = createMemo(() => {
-    const summary = activity().summary
+    const summary = activitySummary()
     const labels = [
       summary.runningCount ? `${summary.runningCount} 个运行中` : undefined,
       summary.errorCount ? `${summary.errorCount} 个失败` : undefined,
@@ -250,7 +250,7 @@ export function SessionHeader() {
     return `执行观察：${labels.join("，")}`
   })
   const activityState = createMemo<SessionHeaderV2ActionsState["activityState"]>(() => {
-    const summary = activity().summary
+    const summary = activitySummary()
     if (summary.errorCount > 0) return "error"
     if (summary.runningCount > 0 || summary.pendingCount > 0) return "running"
     if (view().activityPanel.opened()) return "opened"
@@ -580,7 +580,8 @@ function SessionHeaderV2Actions(props: { state: SessionHeaderV2ActionsState }) {
             variant="ghost-muted"
             size="large"
             class="!w-9 shrink-0"
-            state={props.state.activityState === "idle" ? undefined : "pressed"}
+            data-status={props.state.activityState}
+            state={props.state.activityOpened ? "pressed" : undefined}
             onClick={props.state.onActivityToggle}
             aria-label={props.state.activityLabel}
             aria-expanded={props.state.activityOpened}

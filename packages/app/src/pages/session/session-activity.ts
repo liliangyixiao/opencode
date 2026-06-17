@@ -46,6 +46,16 @@ export type SessionActivity = {
   items: SessionActivityItem[]
 }
 
+type ActivityCounts = {
+  toolCount: number
+  subagentCount: number
+  reasoningCount: number
+  pendingCount: number
+  runningCount: number
+  completedCount: number
+  errorCount: number
+}
+
 export function getSessionActivity(input: {
   messages: Message[]
   parts: Record<string, Part[] | undefined>
@@ -54,30 +64,43 @@ export function getSessionActivity(input: {
     (input.parts[message.id] ?? []).flatMap((part) => itemFromPart(message, part)),
   )
   const lastAssistant = input.messages.findLast((message): message is AssistantMessage => message.role === "assistant")
-  const running = items.some((item) => item.status === "running" || item.status === "pending")
-  const errored = items.some((item) => item.status === "error")
   const firstStart = firstActivityTime(input.messages, input.parts)
   const lastEnd = lastActivityTime(input.messages, input.parts)
-  const pendingCount = items.filter((item) => item.status === "pending").length
-  const runningCount = items.filter((item) => item.status === "running").length
-  const completedCount = items.filter((item) => item.status === "completed").length
-  const errorCount = items.filter((item) => item.status === "error").length
+  const counts = activityCountsFromItems(items)
 
   return {
     summary: {
       agent: lastAssistant?.agent,
       model: lastAssistant ? `${lastAssistant.providerID}/${lastAssistant.modelID}` : undefined,
-      status: errored ? "error" : running ? "running" : "completed",
-      toolCount: items.filter((item) => item.kind === "tool").length,
-      subagentCount: items.filter((item) => item.kind === "subagent").length,
-      reasoningCount: items.filter((item) => item.kind === "reasoning").length,
-      pendingCount,
-      runningCount,
-      completedCount,
-      errorCount,
+      status: activityStatusFromCounts(counts),
+      ...counts,
       elapsedMs: firstStart && lastEnd ? lastEnd - firstStart : undefined,
     },
     items,
+  }
+}
+
+export function getSessionActivitySummary(input: {
+  messages: Message[]
+  parts: Record<string, Part[] | undefined>
+}): SessionActivitySummary {
+  const lastAssistant = input.messages.findLast((message): message is AssistantMessage => message.role === "assistant")
+  const activity = input.messages.flatMap((message) => input.parts[message.id] ?? []).flatMap((part) => {
+    const kind = partActivityKind(part)
+    const status = partActivityStatus(part)
+    if (!kind || !status) return []
+    return [{ kind, status }]
+  })
+  const counts = activityCounts(activity)
+  const firstStart = firstActivityTime(input.messages, input.parts)
+  const lastEnd = lastActivityTime(input.messages, input.parts)
+
+  return {
+    agent: lastAssistant?.agent,
+    model: lastAssistant ? `${lastAssistant.providerID}/${lastAssistant.modelID}` : undefined,
+    status: activityStatusFromCounts(counts),
+    ...counts,
+    elapsedMs: firstStart && lastEnd ? lastEnd - firstStart : undefined,
   }
 }
 
@@ -93,6 +116,43 @@ export function formatActivityDuration(ms: number | undefined) {
   if (seconds < 60) return `${seconds.toFixed(seconds < 10 ? 1 : 0)}s`
   const minutes = Math.floor(seconds / 60)
   return `${minutes}m ${Math.round(seconds % 60)}s`
+}
+
+function activityCountsFromItems(items: SessionActivityItem[]) {
+  return activityCounts(items.map((item) => ({ kind: item.kind, status: item.status })))
+}
+
+function activityCounts(activity: { kind: SessionActivityKind; status: SessionActivityStatus }[]): ActivityCounts {
+  return {
+    toolCount: activity.filter((item) => item.kind === "tool").length,
+    subagentCount: activity.filter((item) => item.kind === "subagent").length,
+    reasoningCount: activity.filter((item) => item.kind === "reasoning").length,
+    pendingCount: activity.filter((item) => item.status === "pending").length,
+    runningCount: activity.filter((item) => item.status === "running").length,
+    completedCount: activity.filter((item) => item.status === "completed").length,
+    errorCount: activity.filter((item) => item.status === "error").length,
+  }
+}
+
+function activityStatusFromCounts(counts: ActivityCounts): SessionActivityStatus {
+  if (counts.errorCount > 0) return "error"
+  if (counts.runningCount > 0 || counts.pendingCount > 0) return "running"
+  return "completed"
+}
+
+function partActivityKind(part: Part): SessionActivityKind | undefined {
+  if (part.type === "reasoning") return "reasoning"
+  if (part.type === "subtask") return "subagent"
+  if (part.type !== "tool") return
+  if (part.tool === "task") return "subagent"
+  return "tool"
+}
+
+function partActivityStatus(part: Part): SessionActivityStatus | undefined {
+  if (part.type === "reasoning") return part.time.end ? "completed" : "running"
+  if (part.type === "subtask") return "pending"
+  if (part.type !== "tool") return
+  return part.state.status
 }
 
 function itemFromPart(message: Message, part: Part): SessionActivityItem[] {

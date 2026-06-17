@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test"
 import type { Message, Part } from "@opencode-ai/sdk/v2/client"
-import { filterSessionActivityItems, formatActivityDuration, getSessionActivity } from "./session-activity"
+import {
+  filterSessionActivityItems,
+  formatActivityDuration,
+  getSessionActivity,
+  getSessionActivitySummary,
+} from "./session-activity"
 
 const assistant = (id: string) =>
   ({
@@ -301,6 +306,69 @@ describe("getSessionActivity", () => {
     expect(activity.items[0]?.detailSections.some((section) => section.label === "输入" && section.code === "{}")).toBe(
       false,
     )
+  })
+})
+
+describe("getSessionActivitySummary", () => {
+  test("counts lightweight activity statuses without returning activity rows", () => {
+    const messages = [assistant("a1")]
+    const parts = {
+      a1: [
+        {
+          id: "pending1",
+          type: "tool",
+          tool: "bash",
+          state: {
+            status: "pending",
+            input: { command: "bun test" },
+            raw: "waiting",
+          },
+        },
+        {
+          id: "running1",
+          type: "tool",
+          tool: "task",
+          state: {
+            status: "running",
+            input: { description: "Audit UI" },
+            time: { start: 100 },
+          },
+        },
+        {
+          id: "done1",
+          type: "reasoning",
+          text: "Done",
+          time: { start: 120, end: 140 },
+        },
+        {
+          id: "failed1",
+          type: "tool",
+          tool: "grep",
+          state: {
+            status: "error",
+            input: { pattern: "SessionActivity" },
+            error: "no matches",
+            time: { start: 200, end: 210 },
+          },
+        },
+      ] as unknown as Part[],
+    }
+
+    const summary = getSessionActivitySummary({ messages, parts })
+
+    expect(summary).toEqual({
+      agent: "build",
+      model: "openai/gpt-5",
+      status: "error",
+      toolCount: 2,
+      subagentCount: 1,
+      reasoningCount: 1,
+      pendingCount: 1,
+      runningCount: 1,
+      completedCount: 1,
+      errorCount: 1,
+      elapsedMs: 110,
+    })
   })
 })
 
