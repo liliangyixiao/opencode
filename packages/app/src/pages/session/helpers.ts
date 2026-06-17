@@ -186,6 +186,15 @@ export const sessionPanelWidth = (input: {
   return `calc(100% - ${input.fileWidth}px)`
 }
 
+export function sessionActivityPanelLayoutClasses() {
+  return {
+    root: "h-full min-w-0 bg-background-base flex flex-col overflow-hidden",
+    fixed: "shrink-0 px-4 pt-4 pb-3 flex flex-col gap-4",
+    body: "flex-1 min-h-0",
+    bodyContent: "flex flex-col gap-4 px-4 pb-8",
+  }
+}
+
 export const createSizing = () => {
   const [state, setState] = createStore({ active: false })
   let t: number | undefined

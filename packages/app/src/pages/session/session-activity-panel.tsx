@@ -2,6 +2,7 @@ import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "so
 import type { Part, Message } from "@opencode-ai/sdk/v2/client"
 import { ScrollView } from "@opencode-ai/ui/scroll-view"
 import { useSync } from "@/context/sync"
+import { sessionActivityPanelLayoutClasses } from "@/pages/session/helpers"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import {
   getSessionActivity,
@@ -194,6 +195,7 @@ export function SessionActivityPanel() {
   const [selected, setSelected] = createSignal<string>()
   const [filter, setFilter] = createSignal<SessionActivityFilter>("all")
   const [now, setNow] = createSignal(Date.now())
+  const layoutClasses = sessionActivityPanelLayoutClasses()
 
   const messages = createMemo(
     () => {
@@ -234,65 +236,67 @@ export function SessionActivityPanel() {
   })
 
   return (
-    <div class="h-full min-w-0 bg-background-base">
-      <ScrollView class="h-full">
-        <div class="flex flex-col gap-4 px-4 pt-4 pb-8">
-          <div class="flex items-center justify-between gap-3">
+    <div class={layoutClasses.root}>
+      <div class={layoutClasses.fixed}>
+        <div class="flex items-center justify-between gap-3">
+          <div>
+            <div class="text-13-medium text-text-strong">执行观察</div>
+            <div class="mt-0.5 text-11-regular text-text-weak">AI 调用、思考摘要、子 Agent</div>
+          </div>
+          <StatusPill status={activity().summary.status} />
+        </div>
+
+        <div class="rounded-md border border-border-weaker-base bg-surface-base px-3 py-3">
+          <div class="grid grid-cols-2 gap-3">
             <div>
-              <div class="text-13-medium text-text-strong">执行观察</div>
-              <div class="mt-0.5 text-11-regular text-text-weak">AI 调用、思考摘要、子 Agent</div>
+              <div class="text-10-regular text-text-weaker">Agent</div>
+              <div class="mt-1 truncate text-12-medium text-text-strong">{activity().summary.agent ?? "—"}</div>
             </div>
-            <StatusPill status={activity().summary.status} />
-          </div>
-
-          <div class="rounded-md border border-border-weaker-base bg-surface-base px-3 py-3">
-            <div class="grid grid-cols-2 gap-3">
-              <div>
-                <div class="text-10-regular text-text-weaker">Agent</div>
-                <div class="mt-1 truncate text-12-medium text-text-strong">{activity().summary.agent ?? "—"}</div>
-              </div>
-              <div>
-                <div class="text-10-regular text-text-weaker">Model</div>
-                <div class="mt-1 truncate text-12-medium text-text-strong">{activity().summary.model ?? "—"}</div>
-              </div>
-              <div>
-                <div class="text-10-regular text-text-weaker">工具</div>
-                <div class="mt-1 text-12-medium text-text-strong">{activity().summary.toolCount}</div>
-              </div>
-              <div>
-                <div class="text-10-regular text-text-weaker">耗时</div>
-                <div class="mt-1 text-12-medium text-text-strong">
-                  {formatActivityDuration(activity().summary.elapsedMs)}
-                </div>
+            <div>
+              <div class="text-10-regular text-text-weaker">Model</div>
+              <div class="mt-1 truncate text-12-medium text-text-strong">{activity().summary.model ?? "—"}</div>
+            </div>
+            <div>
+              <div class="text-10-regular text-text-weaker">工具</div>
+              <div class="mt-1 text-12-medium text-text-strong">{activity().summary.toolCount}</div>
+            </div>
+            <div>
+              <div class="text-10-regular text-text-weaker">耗时</div>
+              <div class="mt-1 text-12-medium text-text-strong">
+                {formatActivityDuration(activity().summary.elapsedMs)}
               </div>
             </div>
-            <div class="mt-3 flex flex-wrap gap-2">
-              <CountPill label="运行中" count={activity().summary.runningCount} status="running" />
-              <CountPill label="失败" count={activity().summary.errorCount} status="error" />
-              <CountPill label="已完成" count={activity().summary.completedCount} status="completed" />
-              <CountPill label="等待中" count={activity().summary.pendingCount} status="pending" />
-            </div>
           </div>
-
-          <div class="flex rounded-md border border-border-weaker-base bg-surface-base p-1">
-            <For each={filters}>
-              {(item) => (
-                <button
-                  type="button"
-                  class="flex-1 rounded px-2 py-1 text-center transition-colors"
-                  classList={{
-                    "bg-background-stronger text-11-medium text-text-strong": filter() === item.value,
-                    "text-11-regular text-text-weak hover:text-text-base": filter() !== item.value,
-                  }}
-                  onClick={() => setFilter(item.value)}
-                  aria-pressed={filter() === item.value}
-                >
-                  {item.label}
-                </button>
-              )}
-            </For>
+          <div class="mt-3 flex flex-wrap gap-2">
+            <CountPill label="运行中" count={activity().summary.runningCount} status="running" />
+            <CountPill label="失败" count={activity().summary.errorCount} status="error" />
+            <CountPill label="已完成" count={activity().summary.completedCount} status="completed" />
+            <CountPill label="等待中" count={activity().summary.pendingCount} status="pending" />
           </div>
+        </div>
 
+        <div class="flex rounded-md border border-border-weaker-base bg-surface-base p-1">
+          <For each={filters}>
+            {(item) => (
+              <button
+                type="button"
+                class="flex-1 rounded px-2 py-1 text-center transition-colors"
+                classList={{
+                  "bg-background-stronger text-11-medium text-text-strong": filter() === item.value,
+                  "text-11-regular text-text-weak hover:text-text-base": filter() !== item.value,
+                }}
+                onClick={() => setFilter(item.value)}
+                aria-pressed={filter() === item.value}
+              >
+                {item.label}
+              </button>
+            )}
+          </For>
+        </div>
+      </div>
+
+      <ScrollView class={layoutClasses.body}>
+        <div class={layoutClasses.bodyContent}>
           <Show
             when={items().length > 0}
             fallback={

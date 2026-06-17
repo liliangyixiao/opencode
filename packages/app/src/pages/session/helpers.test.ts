@@ -8,6 +8,7 @@ import {
   activityPanelTotalWidth,
   focusTerminalById,
   getTabReorderIndex,
+  sessionActivityPanelLayoutClasses,
   sessionPanelWidth,
   shouldFocusTerminalOnKeyDown,
   shouldShowFileTree,
@@ -146,6 +147,18 @@ describe("session panel sizing", () => {
     expect(activityPanelTotalWidth({ activityOpen: true, fileOpen: true, fileWidth: 240, activityWidth: 420 })).toBe(
       660,
     )
+  })
+})
+
+describe("sessionActivityPanelLayoutClasses", () => {
+  test("keeps activity header fixed while body scrolls", () => {
+    const classes = sessionActivityPanelLayoutClasses()
+
+    expect(classes.root).toContain("flex")
+    expect(classes.root).toContain("overflow-hidden")
+    expect(classes.fixed).toContain("shrink-0")
+    expect(classes.body).toContain("flex-1")
+    expect(classes.body).toContain("min-h-0")
   })
 })
 
