@@ -319,6 +319,12 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
                 return
               }
 
+              const activeTab = currentTab()
+              if (activeTab?.type === "draft") {
+                tabs.newDraft({ server: activeTab.server, directory: activeTab.directory }, "")
+                return
+              }
+
               const current = layout.projects.list()[0]
               if (current) {
                 tabs.newDraft({ server: server.key, directory: current.worktree }, "")
@@ -372,7 +378,7 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
                   id: `tab.prev`,
                   category: "tab",
                   title: "",
-                  keybind: `mod+option+ArrowLeft`,
+                  keybind: `mod+option+ArrowLeft,ctrl+shift+tab`,
                   hidden: true,
                   onSelect: () => {
                     let index = tabsStore.findIndex((tab) => tab === currentTab())
@@ -389,7 +395,7 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
                   id: `tab.next`,
                   category: "tab",
                   title: "",
-                  keybind: `mod+option+ArrowRight`,
+                  keybind: `mod+option+ArrowRight,ctrl+tab`,
                   hidden: true,
                   onSelect: () => {
                     let index = tabsStore.findIndex((tab) => tab === currentTab())
